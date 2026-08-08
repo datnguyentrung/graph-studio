@@ -1,5 +1,5 @@
 // import commercialLoansRaw from "../../../data/ontology/LOAN/LoansSpecific/CommercialLoans.ontology.json?raw";
-import raw from "../../../data/ontology/LOAN/LoansGeneral/Loans.ontology.json?raw";
+import raw from "../../../data/ontology/all.ontology.json?raw";
 import { parseOntologyJson } from "./parseOntologyJson";
 import type { OntologyDocument } from "./types";
 
@@ -12,7 +12,7 @@ export type OntologySourceDefinition = {
 export const ontologySources: OntologySourceDefinition[] = [
   {
     slug: "loans",
-    label: "Loans", 
+    label: "Loans",
     load: () => parseOntologyJson(raw),
   },
 ];

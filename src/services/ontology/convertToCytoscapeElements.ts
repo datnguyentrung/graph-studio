@@ -223,7 +223,8 @@ export function convertToCytoscapeElements(
           name: "subclass of",
           label: "SUBCLASS_OF",
           technicalName: "SUBCLASS_OF",
-          definition: "The source class is a specialization of the target class.",
+          definition:
+            "The source class is a specialization of the target class.",
           domain: [nodeIndex.get(source)?.label ?? source],
           range: [parent],
           ontologyGroup: group,

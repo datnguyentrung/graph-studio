@@ -15,7 +15,7 @@ export type ResolvedRoute =
 
 export function resolveRoute(pathname: string): ResolvedRoute {
   const segments = pathname.split("/").filter(Boolean);
-  const segment = (segments[0] ?? "mermaid").toLowerCase();
+  const segment = (segments[0] ?? "ontology").toLowerCase();
   const subPath = segments.slice(1).join("/");
 
   const route = findAppRoute(segment);
