@@ -1,0 +1,268 @@
+flowchart TD
+    %% =========================================================
+    %% 1. USER
+    %% =========================================================
+    subgraph USER_LAYER["1. User Layer"]
+        direction TB
+        U1["User"]
+        U2["Gửi yêu cầu"]
+        U3["Nhận hướng dẫn / thông báo"]
+        U1 --> U2
+    end
+
+    %% =========================================================
+    %% 2. GOOGLE ADK AGENT
+    %% =========================================================
+    subgraph ADK_LAYER["2. Google ADK Agent Layer"]
+        direction TB
+        ROOT["Root Agent / Orchestrator<br/>Google ADK"]
+        ROUTER{"Intent Router"}
+        CLARIFY["Yêu cầu người dùng<br/>cung cấp thêm thông tin"]
+
+        ROOT --> ROUTER
+        ROUTER -->|"Không xác định"| CLARIFY
+    end
+
+    %% =========================================================
+    %% 3. SKILLS
+    %% =========================================================
+    subgraph SKILLS_LAYER["3. Skills Layer"]
+        direction TB
+
+        NAV["Navigation Skill"]
+        COOK["Cooking Skill<br/>Chưa triển khai chi tiết"]
+
+        CHECK_INPUT{"Đủ origin và<br/>destination?"}
+        ASK_INPUT["Hỏi lại thông tin còn thiếu"]
+        SUMMARIZE_INPUT["Tóm tắt lại thông tin<br/>điểm bắt đầu · điểm đến<br/>phương tiện · ưu tiên tuyến"]
+        CONFIRM_INPUT{"User xác nhận<br/>thông tin đúng?"}
+        UPDATE_INPUT["Cập nhật thông tin<br/>theo phản hồi của User"]
+
+        PREPARE["Tạo Navigation Request<br/>origin · destination · current_location<br/>travel_mode · optimize=time"]
+
+        NAV --> CHECK_INPUT
+        CHECK_INPUT -->|"No"| ASK_INPUT
+        CHECK_INPUT -->|"Yes"| SUMMARIZE_INPUT
+        SUMMARIZE_INPUT --> CONFIRM_INPUT
+        CONFIRM_INPUT -->|"No"| UPDATE_INPUT
+        UPDATE_INPUT --> CHECK_INPUT
+        CONFIRM_INPUT -->|"Yes"| PREPARE
+    end
+
+    %% =========================================================
+    %% 4. GEOCODING
+    %% =========================================================
+    subgraph GEOCODING_LAYER["4. Navigation Tools — Chuẩn hóa địa điểm"]
+        direction TB
+
+        GEOCODING["Geocoding Tool<br/>Địa chỉ → node / tọa độ / location ID"]
+        FOUND_LOCATION{"Tìm thấy origin<br/>và destination?"}
+        FUZZY_SEARCH["Fuzzy Location Search<br/>Top điểm đến gần đúng<br/>theo node name · road name · raw text"]
+        HAS_SUGGESTIONS{"Có gợi ý<br/>gần đúng?"}
+        ASK_LOCATION_CONFIRM["Hỏi User chọn/xác nhận<br/>origin hoặc destination<br/>từ danh sách gợi ý"]
+        APPLY_LOCATION_CHOICE["Áp dụng vị trí<br/>đã được User xác nhận"]
+
+        GEOCODING --> FOUND_LOCATION
+        FOUND_LOCATION -->|"No"| FUZZY_SEARCH
+        FUZZY_SEARCH --> HAS_SUGGESTIONS
+        HAS_SUGGESTIONS -->|"Yes"| ASK_LOCATION_CONFIRM
+        ASK_LOCATION_CONFIRM --> APPLY_LOCATION_CHOICE
+        APPLY_LOCATION_CHOICE --> GEOCODING
+    end
+
+    %% =========================================================
+    %% 5. PROVIDER
+    %% =========================================================
+    subgraph PROVIDER_LAYER["5. Data Provider Layer"]
+        direction TB
+
+        SELECT_PROVIDER{"Chọn Route Provider"}
+
+        MOCK["Mock Provider"]
+        READ_GRAPH["Đọc graph.json"]
+        VALID_GRAPH{"graph.json hợp lệ?"}
+        RAW_GRAPH["Raw Graph Data"]
+
+        GOOGLE["Google Maps Provider"]
+        CALL_GOOGLE["Gọi Google Maps API"]
+        GOOGLE_OK{"API thành công?"}
+        RAW_GOOGLE["Raw Google Maps Data"]
+
+        FALLBACK{"Bật fallback mode?"}
+
+        SELECT_PROVIDER -->|"Mock"| MOCK
+        MOCK --> READ_GRAPH
+        READ_GRAPH --> VALID_GRAPH
+        VALID_GRAPH -->|"Yes"| RAW_GRAPH
+
+        SELECT_PROVIDER -->|"Google Maps"| GOOGLE
+        GOOGLE --> CALL_GOOGLE
+        CALL_GOOGLE --> GOOGLE_OK
+        GOOGLE_OK -->|"Yes"| RAW_GOOGLE
+        GOOGLE_OK -->|"No"| FALLBACK
+        FALLBACK -->|"Yes"| MOCK
+    end
+
+    %% =========================================================
+    %% 6. ROUTE PROCESSING
+    %% =========================================================
+    subgraph ROUTE_LAYER["6. Navigation Tools — Tìm và chuẩn hóa tuyến"]
+        direction TB
+
+        NORMALIZER["Route Normalizer / Adapter<br/>Chuyển dữ liệu nguồn về schema thống nhất"]
+        NORMALIZED{"Chuẩn hóa thành công?"}
+
+        ROUTE_FINDING["Route Finding Tool<br/>Dijkstra / A-star<br/>Chi phí cạnh = thời gian"]
+        ROUTE_EXISTS{"Tồn tại tuyến đường?"}
+
+        INTERNAL_ROUTE["Internal Route Schema<br/>route_id · origin · destination<br/>distance · duration · nodes · edges<br/>steps · polyline · provider · status"]
+
+        NORMALIZER --> NORMALIZED
+        NORMALIZED -->|"Yes"| ROUTE_FINDING
+        ROUTE_FINDING --> ROUTE_EXISTS
+        ROUTE_EXISTS -->|"Yes"| INTERNAL_ROUTE
+    end
+
+    %% =========================================================
+    %% 7. SESSION AND FIRST INSTRUCTION
+    %% =========================================================
+    subgraph STATE_LAYER["7. State Layer"]
+        direction TB
+
+        SAVE_ROUTE["Lưu tuyến đường"]
+        SESSION[("Navigation Session State<br/>current_route<br/>current_step_index<br/>current_location<br/>destination<br/>travel_mode<br/>provider<br/>route_status")]
+        INSTRUCTION["Navigation Instruction Tool<br/>Sinh hướng dẫn đầu tiên"]
+
+        SAVE_ROUTE --> SESSION
+        SESSION --> INSTRUCTION
+    end
+
+    %% =========================================================
+    %% 8. LIVE NAVIGATION
+    %% =========================================================
+    subgraph TRACKING_LAYER["8. Theo dõi trong quá trình di chuyển"]
+        direction TB
+
+        NEW_LOCATION["Nhận vị trí mới của User"]
+        TRACKING["Location Tracking Tool"]
+        HAS_LOCATION{"Nhận được vị trí?"}
+
+        DEVIATION{"Route Deviation Detector"}
+
+        ON_ROUTE["Đi đúng tuyến<br/>Cập nhật tiến độ"]
+        NEXT_STEP["Navigation Instruction Tool<br/>Lấy bước tiếp theo"]
+
+        OFF_ROUTE["Đi lệch tuyến<br/>origin = current_location"]
+        REROUTE["Yêu cầu tính lại tuyến"]
+
+        ARRIVED["Đã đến destination"]
+        CLOSE_SESSION["Đóng Navigation Session"]
+
+        NEW_LOCATION --> TRACKING
+        TRACKING --> HAS_LOCATION
+        HAS_LOCATION -->|"Yes"| DEVIATION
+
+        DEVIATION -->|"On-route"| ON_ROUTE
+        ON_ROUTE --> NEXT_STEP
+
+        DEVIATION -->|"Off-route"| OFF_ROUTE
+        OFF_ROUTE --> REROUTE
+
+        DEVIATION -->|"Arrived"| ARRIVED
+        ARRIVED --> CLOSE_SESSION
+    end
+
+    %% =========================================================
+    %% 9. ERROR HANDLING
+    %% =========================================================
+    subgraph ERROR_LAYER["9. Error Handling"]
+        direction TB
+
+        E_MISSING["Thiếu origin hoặc destination"]
+        E_GEOCODE["Không tìm thấy địa điểm<br/>và không có gợi ý phù hợp"]
+        E_GRAPH["graph.json không hợp lệ"]
+        E_GOOGLE["Google Maps API lỗi / timeout"]
+        E_NORMALIZE["Không thể chuyển về internal schema"]
+        E_ROUTE["Không tồn tại tuyến đường"]
+        E_LOCATION["Không nhận được vị trí hiện tại"]
+
+        ERROR_HANDLER["Root Agent xử lý lỗi<br/>và tạo thông báo cho User"]
+
+        E_MISSING --> ERROR_HANDLER
+        E_GEOCODE --> ERROR_HANDLER
+        E_GRAPH --> ERROR_HANDLER
+        E_GOOGLE --> ERROR_HANDLER
+        E_NORMALIZE --> ERROR_HANDLER
+        E_ROUTE --> ERROR_HANDLER
+        E_LOCATION --> ERROR_HANDLER
+    end
+
+    %% =========================================================
+    %% MAIN TOP-DOWN FLOW
+    %% =========================================================
+    U2 --> ROOT
+
+    ROUTER -->|"Navigation"| NAV
+    ROUTER -->|"Cooking"| COOK
+
+    CLARIFY --> U3
+    COOK --> U3
+
+    ASK_INPUT --> E_MISSING
+    PREPARE --> GEOCODING
+
+    FOUND_LOCATION -->|"Yes"| SELECT_PROVIDER
+    HAS_SUGGESTIONS -->|"No"| E_GEOCODE
+
+    VALID_GRAPH -->|"No"| E_GRAPH
+    GOOGLE_OK -->|"No"| E_GOOGLE
+    FALLBACK -->|"No"| E_GOOGLE
+
+    RAW_GRAPH --> NORMALIZER
+    RAW_GOOGLE --> NORMALIZER
+
+    NORMALIZED -->|"No"| E_NORMALIZE
+    ROUTE_EXISTS -->|"No"| E_ROUTE
+
+    INTERNAL_ROUTE --> SAVE_ROUTE
+    INSTRUCTION --> U3
+    U3 --> U1
+
+    %% =========================================================
+    %% LIVE TRACKING FLOW
+    %% =========================================================
+    U1 -->|"Vị trí mới"| NEW_LOCATION
+    SESSION -. "Route hiện tại" .-> TRACKING
+
+    HAS_LOCATION -->|"No"| E_LOCATION
+
+    ON_ROUTE --> SESSION
+    NEXT_STEP --> U3
+
+    REROUTE --> SELECT_PROVIDER
+
+    CLOSE_SESSION --> SESSION
+    CLOSE_SESSION -->|"Thông báo đã đến nơi"| U3
+
+    ERROR_HANDLER --> U3
+
+    %% =========================================================
+    %% STYLES
+    %% =========================================================
+    classDef user fill:#E3F2FD,stroke:#1976D2,stroke-width:2px,color:#0D47A1
+    classDef agent fill:#E8EAF6,stroke:#3F51B5,stroke-width:2px,color:#1A237E
+    classDef skill fill:#E8F5E9,stroke:#43A047,stroke-width:2px,color:#1B5E20
+    classDef tool fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#5D4300
+    classDef provider fill:#F3E5F5,stroke:#8E24AA,stroke-width:2px,color:#4A148C
+    classDef state fill:#E0F2F1,stroke:#00897B,stroke-width:2px,color:#004D40
+    classDef error fill:#FFEBEE,stroke:#E53935,stroke-width:2px,color:#B71C1C
+    classDef decision fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px,color:#E65100
+
+    class U1,U2,U3,NEW_LOCATION user
+    class ROOT,ROUTER,CLARIFY,ERROR_HANDLER agent
+    class NAV,COOK,CHECK_INPUT,ASK_INPUT,SUMMARIZE_INPUT,CONFIRM_INPUT,UPDATE_INPUT,PREPARE skill
+    class GEOCODING,FUZZY_SEARCH,ASK_LOCATION_CONFIRM,APPLY_LOCATION_CHOICE,NORMALIZER,ROUTE_FINDING,INSTRUCTION,TRACKING,NEXT_STEP,DEVIATION tool
+    class SELECT_PROVIDER,MOCK,READ_GRAPH,RAW_GRAPH,GOOGLE,CALL_GOOGLE,RAW_GOOGLE,FALLBACK provider
+    class SAVE_ROUTE,SESSION,INTERNAL_ROUTE,ON_ROUTE,OFF_ROUTE,REROUTE,ARRIVED,CLOSE_SESSION state
+    class E_MISSING,E_GEOCODE,E_GRAPH,E_GOOGLE,E_NORMALIZE,E_ROUTE,E_LOCATION error
+    class CHECK_INPUT,CONFIRM_INPUT,FOUND_LOCATION,HAS_SUGGESTIONS,SELECT_PROVIDER,VALID_GRAPH,GOOGLE_OK,FALLBACK,NORMALIZED,ROUTE_EXISTS,HAS_LOCATION,DEVIATION decision
