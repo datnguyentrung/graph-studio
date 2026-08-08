@@ -3,14 +3,21 @@ import cytoscape, {
   type ElementDefinition,
   type LayoutOptions,
 } from "cytoscape";
-import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type {
   OntologyEdgeData,
   OntologyNodeData,
 } from "../../services/ontology/types";
+import type { VisibilityState } from "../../services/ontology/visibilityTypes";
 import { isOntologyElementVisible } from "../../utils/ontology/ontologyVisibility";
 import { cytoscapeStyles } from "./cytoscapeStyles";
-import type { VisibilityState } from "../../services/ontology/visibilityTypes";
 
 export type LayoutName =
   | "cose"
@@ -20,8 +27,21 @@ export type LayoutName =
   | "grid";
 export type LayoutTarget = "all" | "visible" | "selected";
 
+export const MIN_ZOOM_PERCENT = 50;
+export const MAX_ZOOM_PERCENT = 500;
+const DEFAULT_ZOOM_PERCENT = 100;
+
+function clampZoomPercent(percent: number): number {
+  return Math.min(
+    MAX_ZOOM_PERCENT,
+    Math.max(MIN_ZOOM_PERCENT, Math.round(percent)),
+  );
+}
+
 export type CytoscapeGraphController = {
   containerRef: RefObject<HTMLDivElement | null>;
+  zoomPercent: number;
+  setZoomPercent: (percent: number) => void;
   fit: () => void;
   centerSelected: () => void;
   resetView: () => void;
@@ -61,6 +81,7 @@ export function useCytoscapeGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const onSelectionChangeRef = useRef(onSelectionChange);
+  const [zoomPercent, setZoomPercentState] = useState(DEFAULT_ZOOM_PERCENT);
 
   useEffect(() => {
     onSelectionChangeRef.current = onSelectionChange;
@@ -83,14 +104,17 @@ export function useCytoscapeGraph({
       },
       boxSelectionEnabled: true,
       selectionType: "additive",
-      wheelSensitivity: 0.2,
-      minZoom: 0.08,
-      maxZoom: 6,
+      wheelSensitivity: 0.5,
+      minZoom: MIN_ZOOM_PERCENT / 100,
+      maxZoom: MAX_ZOOM_PERCENT / 100,
     });
 
     const emitSelection = () => {
       updateSemanticLens(cy);
       onSelectionChangeRef.current(cy.$(":selected").map((item) => item.id()));
+    };
+    const emitZoom = () => {
+      setZoomPercentState(clampZoomPercent(cy.zoom() * 100));
     };
     const clearSelection = (event: cytoscape.EventObject) => {
       if (event.target === cy) {
@@ -99,14 +123,31 @@ export function useCytoscapeGraph({
     };
 
     cy.on("select unselect", "node, edge", emitSelection);
+    cy.on("zoom", emitZoom);
     cy.on("tap", clearSelection);
     cyRef.current = cy;
+    emitZoom();
 
     return () => {
       cyRef.current = null;
       cy.destroy();
     };
   }, [elements]);
+
+  const setZoomPercent = useCallback((percent: number) => {
+    const cy = cyRef.current;
+    if (!cy) return;
+
+    const nextPercent = clampZoomPercent(percent);
+    cy.zoom({
+      level: nextPercent / 100,
+      renderedPosition: {
+        x: cy.width() / 2,
+        y: cy.height() / 2,
+      },
+    });
+    setZoomPercentState(nextPercent);
+  }, []);
 
   const fit = useCallback(() => {
     cyRef.current?.fit(cyRef.current.elements(":visible"), 56);
@@ -180,26 +221,29 @@ export function useCytoscapeGraph({
     return expanded.map((element) => element.id());
   }, []);
 
-  const cycleVisibleSelection = useCallback((step: 1 | -1, additive: boolean) => {
-    const cy = cyRef.current;
-    if (!cy) return;
-    const visible = cy.elements(":visible");
-    if (visible.empty()) return;
-    const visibleElements = visible.toArray();
-    const selected = cy.$(":selected").last();
-    const currentIndex = selected.nonempty()
-      ? visibleElements.findIndex((element) => element.id() === selected.id())
-      : step === 1
-        ? -1
-        : 0;
-    const nextIndex =
-      (currentIndex + step + visibleElements.length) % visibleElements.length;
-    const next = visibleElements[nextIndex];
+  const cycleVisibleSelection = useCallback(
+    (step: 1 | -1, additive: boolean) => {
+      const cy = cyRef.current;
+      if (!cy) return;
+      const visible = cy.elements(":visible");
+      if (visible.empty()) return;
+      const visibleElements = visible.toArray();
+      const selected = cy.$(":selected").last();
+      const currentIndex = selected.nonempty()
+        ? visibleElements.findIndex((element) => element.id() === selected.id())
+        : step === 1
+          ? -1
+          : 0;
+      const nextIndex =
+        (currentIndex + step + visibleElements.length) % visibleElements.length;
+      const next = visibleElements[nextIndex];
 
-    if (!additive) cy.$(":selected").unselect();
-    next.select();
-    cy.center(next);
-  }, []);
+      if (!additive) cy.$(":selected").unselect();
+      next.select();
+      cy.center(next);
+    },
+    [],
+  );
 
   const clearSelection = useCallback(() => {
     cyRef.current?.$(":selected").unselect();
@@ -226,6 +270,8 @@ export function useCytoscapeGraph({
   return useMemo(
     () => ({
       containerRef,
+      zoomPercent,
+      setZoomPercent,
       fit,
       centerSelected,
       resetView,
@@ -246,6 +292,8 @@ export function useCytoscapeGraph({
       clearSelection,
       resetView,
       runLayout,
+      setZoomPercent,
+      zoomPercent,
     ],
   );
 }

@@ -344,6 +344,49 @@
 
 .ontology-canvas { position: absolute; inset: 0; }
 
+.ontology-zoom-control {
+  position: absolute;
+  right: 10px;
+  bottom: 42px;
+  z-index: 2;
+  display: grid;
+  gap: 6px;
+  width: min(210px, calc(100% - 20px));
+  padding: 8px 10px 9px;
+  color: var(--onto-ink);
+  background: var(--onto-panel);
+  border: 1px solid var(--onto-line);
+  border-radius: 5px;
+  box-shadow: 0 2px 8px rgb(24 40 46 / 12%);
+}
+
+.ontology-zoom-control__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ontology-zoom-control label {
+  color: var(--onto-muted);
+  font: 600 10px/1 "Segoe UI", sans-serif;
+}
+
+.ontology-zoom-control output {
+  min-width: 42px;
+  color: var(--onto-ink);
+  font: 650 11px/1 "Cascadia Mono", Consolas, monospace;
+  text-align: right;
+}
+
+.ontology-zoom-control input[type="range"] {
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--onto-internal);
+  cursor: pointer;
+}
+
 .ontology-canvas__hint {
   position: absolute;
   bottom: 10px;
@@ -533,6 +576,7 @@
   .ontology-workspace--show-detail .ontology-detail { display: block; }
   .ontology-filters { max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--onto-line); }
   .ontology-canvas-wrap { min-height: 58vh; }
+  .ontology-zoom-control { right: 8px; width: min(190px, calc(100% - 16px)); }
   .ontology-detail { max-height: none; min-height: 280px; }
 }
 

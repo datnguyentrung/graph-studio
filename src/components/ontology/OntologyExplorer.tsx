@@ -69,17 +69,18 @@ export function OntologyExplorer({
     elements: model.elements,
     onSelectionChange: handleSelectionChange,
   });
+  const { applyVisibility } = graph;
 
   useEffect(() => {
-    graph.applyVisibility({
+    applyVisibility({
       ...filters,
       manuallyHiddenIds,
       isolatedIds,
       revealedIds,
     });
   }, [
+    applyVisibility,
     filters,
-    graph,
     isolatedIds,
     manuallyHiddenIds,
     revealedIds,
@@ -274,6 +275,8 @@ export function OntologyExplorer({
         <CytoscapeCanvas
           containerRef={graph.containerRef}
           onKeyDown={handleCanvasKeyDown}
+          zoomPercent={graph.zoomPercent}
+          onZoomPercentChange={graph.setZoomPercent}
         />
         <OntologyDetailPanel model={model} selectedIds={selectedIds} />
       </div>
