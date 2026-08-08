@@ -66,6 +66,50 @@ body {
   margin: 0;
 }
 
+.route-loading {
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+.route-message {
+  display: grid;
+  gap: 16px;
+  min-height: 100svh;
+  padding: 32px;
+  place-content: center;
+  text-align: center;
+}
+
+.route-message h1,
+.route-message p {
+  margin: 0;
+}
+
+.route-message__eyebrow {
+  color: var(--accent);
+  font: 700 12px/1.2 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+
+.route-message__links {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.route-message__links a {
+  padding: 8px 12px;
+  color: var(--text-h);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-decoration: none;
+}
+
 h1,
 h2 {
   font-family: var(--heading);
