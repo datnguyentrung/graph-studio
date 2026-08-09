@@ -1,4 +1,5 @@
 import cytoscape, { type ElementDefinition } from "cytoscape";
+import { spaciousCoseLayoutOptions } from "../../services/ontology/ontologyLayoutPolicy";
 
 type CoseLayoutRequest = {
   id: number;
@@ -30,12 +31,7 @@ self.onmessage = (event: MessageEvent<CoseLayoutRequest>) => {
       layout: { name: "preset" },
     });
 
-    cy.layout({
-      name: "cose",
-      animate: false,
-      fit: false,
-      padding: 56,
-    }).run();
+    cy.layout({ ...spaciousCoseLayoutOptions }).run();
 
     const positions = cy.nodes().map((node) => ({
       id: node.id(),

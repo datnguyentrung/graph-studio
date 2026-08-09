@@ -35,7 +35,8 @@ export type GraphRuntimeStatus =
 export const MIN_ZOOM_PERCENT = 50;
 export const MAX_ZOOM_PERCENT = 500;
 const DEFAULT_ZOOM_PERCENT = 100;
-const GRAPH_MOUNT_CHUNK_SIZE = 500;
+const GRAPH_MOUNT_CHUNK_SIZE = 512;
+const LARGE_GRAPH_OVERVIEW_ZOOM = 0.85;
 
 type CoseLayoutResponse =
   | {
@@ -64,6 +65,16 @@ function definitionId(element: ElementDefinition): string {
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function keepReadableViewport(cy: Core): void {
+  const elements = cy.elements();
+  if (elements.empty()) return;
+  cy.center(elements);
+  cy.zoom({
+    level: LARGE_GRAPH_OVERVIEW_ZOOM,
+    renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 },
+  });
 }
 
 function updateSemanticLens(cy: Core): void {
@@ -225,9 +236,14 @@ export function useCytoscapeGraph({
       collection.layout({
         name: "grid",
         animate: false,
-        fit: shouldFit,
-        padding: 56,
+        fit: false,
+        padding: 160,
       }).run();
+      if (shouldFit && target === "selected") {
+        cy.fit(collection, 80);
+      } else {
+        keepReadableViewport(cy);
+      }
     } catch {
       // The worker layout is the authoritative CoSE pass; grid is only a fast fallback.
     }
@@ -266,11 +282,16 @@ export function useCytoscapeGraph({
           if (node.nonempty()) node.position({ x: position.x, y: position.y });
         }
       });
-      if (shouldFit) cy.fit(collection, 56);
+      if (shouldFit && target === "selected") {
+        cy.fit(collection, 80);
+      } else {
+        keepReadableViewport(cy);
+      }
+      setZoomPercentState(clampZoomPercent(cy.zoom() * 100));
       performance.mark("ontology:layout-complete");
       setStatus("ready");
       setStatusMessage(
-        `CoSE layout complete in ${Math.round(response.elapsedMs).toLocaleString()} ms.`,
+        `CoSE layout complete in ${Math.round(response.elapsedMs).toLocaleString()} ms. Full graph stays zoomed out for readable spacing; use Fit graph if you want to see every node at once.`,
       );
     };
     worker.onerror = () => {

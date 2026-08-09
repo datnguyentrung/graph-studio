@@ -13,7 +13,7 @@ export const cytoscapeStyles: StylesheetJson = [
       "font-weight": 600,
       height: 46,
       label: "data(label)",
-      "min-zoomed-font-size": 8,
+      "min-zoomed-font-size": 10,
       "text-background-color": "#EDF3F4",
       "text-background-opacity": 0.92,
       "text-background-padding": "3px",
@@ -30,12 +30,6 @@ export const cytoscapeStyles: StylesheetJson = [
       "border-style": "dashed",
       color: "#43565D",
       shape: "diamond",
-    },
-  },
-  {
-    selector: ".property-element",
-    style: {
-      display: "none",
     },
   },
   {
@@ -56,7 +50,7 @@ export const cytoscapeStyles: StylesheetJson = [
       label: "data(label)",
       "font-family": "Cascadia Mono, Consolas, monospace",
       "font-size": 8,
-      "min-zoomed-font-size": 8,
+      "min-zoomed-font-size": 10,
       "line-color": "#47747A",
       "line-opacity": 0.78,
       "target-arrow-color": "#47747A",

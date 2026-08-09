@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canRunOntologyLayout,
   chooseAutomaticOntologyLayout,
+  spaciousCoseLayoutOptions,
 } from "./ontologyLayoutPolicy";
 
 describe("ontology layout policy", () => {
@@ -32,5 +33,13 @@ describe("ontology layout policy", () => {
   it("does not hard-block CoSE by node count", () => {
     expect(canRunOntologyLayout("cose", 10_000)).toBe(true);
     expect(canRunOntologyLayout("breadthfirst", 10_000)).toBe(true);
+  });
+
+  it("keeps the default CoSE pass spacious instead of fitting the full graph", () => {
+    expect(spaciousCoseLayoutOptions.name).toBe("cose");
+    expect(spaciousCoseLayoutOptions.fit).toBe(false);
+    expect(spaciousCoseLayoutOptions.idealEdgeLength).toBeGreaterThan(100);
+    expect(spaciousCoseLayoutOptions.nodeRepulsion).toBeGreaterThan(400_000);
+    expect(spaciousCoseLayoutOptions.componentSpacing).toBeGreaterThanOrEqual(200);
   });
 });
