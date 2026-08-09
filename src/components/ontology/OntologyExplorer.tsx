@@ -1,24 +1,32 @@
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useState,
   type KeyboardEvent,
 } from "react";
+import {
+  createDefaultGraphView,
+  getOntologyNeighborhoodIds,
+  projectOntologyGraph,
+  toFocusView,
+  type GraphViewState,
+} from "../../services/ontology/projectOntologyGraph";
 import type {
   CytoscapeGraphModel,
   OntologyDocument,
 } from "../../services/ontology/types";
-import { matchesNodeSearch } from "../../utils/ontology/searchOntology";
-import { CytoscapeCanvas } from "./CytoscapeCanvas";
-import {
-  OntologyFilters,
-} from "./OntologyFilters";
 import {
   createDefaultFilters,
   type OntologyFilterState,
+  type VisibilityState,
 } from "../../services/ontology/visibilityTypes";
+import { matchesNodeSearch } from "../../utils/ontology/searchOntology";
+import { CytoscapeCanvas } from "./CytoscapeCanvas";
 import { OntologyDetailPanel } from "./OntologyDetailPanel";
+import type { OntologyFileSelectorProps } from "./OntologyFileSelector";
+import { OntologyFilters } from "./OntologyFilters";
 import { OntologyToolbar } from "./OntologyToolbar";
 import {
   useCytoscapeGraph,
@@ -30,12 +38,21 @@ type OntologyExplorerProps = {
   document: OntologyDocument;
   model: CytoscapeGraphModel;
   sourceLabel: string;
+  ontologySelector: OntologyFileSelectorProps;
+  ontologyLoadError: string;
   subPath: string;
 };
 
-function addToSet(source: Set<string>, values: string[]): Set<string> {
+function updateSet(
+  source: Set<string>,
+  values: readonly string[],
+  add: boolean,
+): Set<string> {
   const next = new Set(source);
-  for (const value of values) next.add(value);
+  for (const value of values) {
+    if (add) next.add(value);
+    else next.delete(value);
+  }
   return next;
 }
 
@@ -43,10 +60,13 @@ export function OntologyExplorer({
   document,
   model,
   sourceLabel,
+  ontologySelector,
+  ontologyLoadError,
   subPath,
 }: OntologyExplorerProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [filters, setFilters] = useState<OntologyFilterState>(() =>
     createDefaultFilters(model.facets),
   );
@@ -55,100 +75,122 @@ export function OntologyExplorer({
   );
   const [isolatedIds, setIsolatedIds] = useState<Set<string> | null>(null);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
+  const [view, setView] = useState<GraphViewState>(createDefaultGraphView);
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [layoutName, setLayoutName] = useState<LayoutName>("cose");
-  const [layoutTarget, setLayoutTarget] = useState<LayoutTarget>("visible");
+  const [layoutTarget, setLayoutTarget] = useState<LayoutTarget>("current");
   const [fitAfterLayout, setFitAfterLayout] = useState(true);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
+
+  const visibility = useMemo<VisibilityState>(
+    () => ({
+      ...filters,
+      manuallyHiddenIds,
+      isolatedIds,
+      revealedIds,
+    }),
+    [filters, isolatedIds, manuallyHiddenIds, revealedIds],
+  );
+  const projection = useMemo(
+    () => projectOntologyGraph(model, view, visibility),
+    [model, view, visibility],
+  );
 
   const handleSelectionChange = useCallback((ids: string[]) => {
     setSelectedIds(ids);
     if (ids.length > 0) setShowMobileDetail(true);
   }, []);
   const graph = useCytoscapeGraph({
-    elements: model.elements,
+    elements: projection.elements,
     onSelectionChange: handleSelectionChange,
   });
-  const { applyVisibility } = graph;
 
   useEffect(() => {
-    applyVisibility({
-      ...filters,
-      manuallyHiddenIds,
-      isolatedIds,
-      revealedIds,
+    if (
+      !pendingFocusId ||
+      (graph.status !== "ready" && graph.status !== "processing-layout") ||
+      !projection.nodeIds.includes(pendingFocusId)
+    ) return;
+    const frame = window.requestAnimationFrame(() => {
+      graph.focusElement(pendingFocusId);
+      setPendingFocusId(null);
     });
-  }, [
-    applyVisibility,
-    filters,
-    isolatedIds,
-    manuallyHiddenIds,
-    revealedIds,
-  ]);
+    return () => window.cancelAnimationFrame(frame);
+  }, [graph, pendingFocusId, projection.nodeIds]);
 
   const searchResults = useMemo(
     () =>
       [...model.nodeIndex.values()]
-        .filter((node) => matchesNodeSearch(node, searchQuery))
+        .filter((node) => matchesNodeSearch(node, deferredSearchQuery))
         .sort((left, right) => left.label.localeCompare(right.label)),
-    [model.nodeIndex, searchQuery],
+    [deferredSearchQuery, model.nodeIndex],
   );
+  const { internalCount, propertyCount } = useMemo(() => {
+    let nextInternalCount = 0;
+    let nextPropertyCount = 0;
+    for (const node of model.nodeIndex.values()) {
+      if (node.nodeType === "PROPERTY") nextPropertyCount += 1;
+      else if (node.scope === "internal") nextInternalCount += 1;
+    }
+    return {
+      internalCount: nextInternalCount,
+      propertyCount: nextPropertyCount,
+    };
+  }, [model.nodeIndex]);
 
-  const internalCount = [...model.nodeIndex.values()].filter(
-    (node) => node.scope === "internal" && node.nodeType !== "PROPERTY",
-  ).length;
-  const propertyCount = [...model.nodeIndex.values()].filter(
-    (node) => node.nodeType === "PROPERTY",
-  ).length;
-
-  function chooseSearchResult(id: string) {
-    setManuallyHiddenIds((current) => {
-      const next = new Set(current);
-      next.delete(id);
-      return next;
-    });
-    setRevealedIds((current) => addToSet(current, [id]));
-    window.setTimeout(() => graph.focusElement(id), 0);
+  function revealElements(ids: readonly string[]) {
+    setManuallyHiddenIds((current) => updateSet(current, ids, false));
+    setRevealedIds((current) => updateSet(current, ids, true));
   }
 
-  function hideSelected() {
-    setManuallyHiddenIds((current) => addToSet(current, selectedIds));
-    setRevealedIds((current) => {
-      const next = new Set(current);
-      for (const id of selectedIds) next.delete(id);
-      return next;
-    });
+  function hideElements(ids: readonly string[]) {
+    setManuallyHiddenIds((current) => updateSet(current, ids, true));
+    setRevealedIds((current) => updateSet(current, ids, false));
+  }
+
+  function chooseSearchResult(id: string) {
+    revealElements([id]);
+    setView(toFocusView(model, [id]));
+    setPendingFocusId(id);
+  }
+
+  function focusSelection(depth = 0) {
+    if (selectedIds.length === 0) return;
+    setView(toFocusView(model, selectedIds, depth));
+    setPendingFocusId(selectedIds[0]);
   }
 
   function isolateSelected() {
-    setIsolatedIds(new Set(graph.getNeighborhoodIds(selectedIds, 0)));
+    if (selectedIds.length === 0) return;
+    const neighborhood = getOntologyNeighborhoodIds(model, selectedIds, 0);
+    const isolated = [...neighborhood.nodeIds, ...neighborhood.edgeIds];
+    setIsolatedIds(new Set(isolated));
+    revealElements(isolated);
+    setView(toFocusView(model, selectedIds, 0));
   }
 
   function showNeighbors(depth: number) {
-    const neighborhood = graph.getNeighborhoodIds(selectedIds, depth);
-    setManuallyHiddenIds((current) => {
-      const next = new Set(current);
-      for (const id of neighborhood) next.delete(id);
-      return next;
-    });
-    setRevealedIds((current) => addToSet(current, neighborhood));
-    if (isolatedIds) setIsolatedIds(new Set(neighborhood));
+    if (selectedIds.length === 0) return;
+    const neighborhood = getOntologyNeighborhoodIds(model, selectedIds, depth);
+    const ids = [...neighborhood.nodeIds, ...neighborhood.edgeIds];
+    revealElements(ids);
+    setIsolatedIds((current) => current ? new Set(ids) : current);
+    setView(toFocusView(model, selectedIds, depth));
   }
 
   function hideNeighbors() {
+    if (selectedIds.length === 0) return;
     const selected = new Set(selectedIds);
-    const neighbors = graph
-      .getNeighborhoodIds(selectedIds, 1)
-      .filter((id) => !selected.has(id));
-    setManuallyHiddenIds((current) => addToSet(current, neighbors));
-    setRevealedIds((current) => {
-      const next = new Set(current);
-      for (const id of neighbors) next.delete(id);
-      return next;
-    });
+    const neighborhood = getOntologyNeighborhoodIds(model, selectedIds, 1);
+    hideElements(
+      [...neighborhood.nodeIds, ...neighborhood.edgeIds].filter(
+        (id) => !selected.has(id),
+      ),
+    );
   }
 
-  function restoreHidden() {
+  function resetVisibility() {
     setManuallyHiddenIds(new Set());
     setIsolatedIds(null);
     setRevealedIds(new Set());
@@ -156,24 +198,34 @@ export function OntologyExplorer({
 
   function resetFilters() {
     setFilters(createDefaultFilters(model.facets));
-    restoreHidden();
+    resetVisibility();
   }
 
-  function showAll() {
-    setFilters({
-      ...createDefaultFilters(model.facets),
-      showProperties: true,
+  function backToFullGraph() {
+    setView(createDefaultGraphView());
+    setPendingFocusId(null);
+    graph.clearSelection();
+  }
+
+  function expandView() {
+    setView((current) => {
+      if (current.mode === "focus") {
+        return { ...current, depth: current.depth + 1 };
+      }
+      if (current.mode === "full") {
+        return selectedIds.length > 0
+          ? toFocusView(model, selectedIds, 2)
+          : { mode: "overview", depth: 3 };
+      }
+      if (selectedIds.length > 0) {
+        return toFocusView(model, selectedIds, 2);
+      }
+      return { ...current, depth: current.depth + 1 };
     });
-    restoreHidden();
   }
 
   function changeFilters(nextFilters: OntologyFilterState) {
     setFilters(nextFilters);
-    setRevealedIds(new Set());
-  }
-
-  function changeSearchQuery(query: string) {
-    setSearchQuery(query);
     setRevealedIds(new Set());
   }
 
@@ -190,6 +242,10 @@ export function OntologyExplorer({
     }
   }
 
+  const graphReady = graph.status === "ready" ||
+    graph.status === "processing-layout" ||
+    graph.status === "error";
+
   return (
     <main className="ontology-page">
       <header className="ontology-header">
@@ -204,7 +260,9 @@ export function OntologyExplorer({
         <div className="ontology-dataset">
           <span className="ontology-eyebrow">Active source</span>
           <strong>{sourceLabel}</strong>
-          <span className="ontology-mono">{document.ontologyBase ?? "Unknown ontology base"}</span>
+          <span className="ontology-mono">
+            {document.ontologyBase ?? "Unknown ontology base"}
+          </span>
         </div>
         <div className="ontology-stats" aria-label="Graph summary">
           <span><strong>{internalCount}</strong> classes</span>
@@ -215,10 +273,17 @@ export function OntologyExplorer({
       </header>
 
       <OntologyToolbar
+        ontologySelector={ontologySelector}
         selectedCount={selectedIds.length}
+        viewMode={view.mode}
+        canExpand={view.mode !== "full" && !projection.truncated}
+        graphReady={graphReady}
         layoutName={layoutName}
         layoutTarget={layoutTarget}
         fitAfterLayout={fitAfterLayout}
+        coseDisabled={!graph.canRunCose}
+        layoutBlockedReason=""
+        processingLayout={graph.status === "processing-layout"}
         onLayoutNameChange={setLayoutName}
         onLayoutTargetChange={setLayoutTarget}
         onFitAfterLayoutChange={setFitAfterLayout}
@@ -226,19 +291,29 @@ export function OntologyExplorer({
         onFit={graph.fit}
         onCenter={graph.centerSelected}
         onResetView={graph.resetView}
-        onFocus={() => selectedIds[0] && graph.focusElement(selectedIds[0])}
-        onHideSelected={hideSelected}
+        onFocus={() => focusSelection(0)}
+        onHideSelected={() => hideElements(selectedIds)}
         onIsolateSelected={isolateSelected}
         onShowNeighbors={() => showNeighbors(1)}
-        onExpandNeighbors={() => showNeighbors(2)}
         onHideNeighbors={hideNeighbors}
-        onRestoreHidden={restoreHidden}
-        onShowAll={showAll}
+        onBackToOverview={backToFullGraph}
+        onExpandView={expandView}
+        onResetVisibility={resetVisibility}
+        onCancelLayout={graph.cancelLayout}
       />
 
-      {model.diagnostics.unresolvedRelationships.length > 0 && (
-        <div className="ontology-warning" role="status">
-          {model.diagnostics.unresolvedRelationships.length} relationships were kept in diagnostics because domain or range is missing.
+      {(ontologyLoadError || model.diagnostics.unresolvedRelationships.length > 0) && (
+        <div className="ontology-notices">
+          {ontologyLoadError && (
+            <div className="ontology-warning ontology-warning--error" role="alert">
+              {ontologyLoadError} The current ontology remains active.
+            </div>
+          )}
+          {model.diagnostics.unresolvedRelationships.length > 0 && (
+            <div className="ontology-warning" role="status">
+              {model.diagnostics.unresolvedRelationships.length} relationships were kept in diagnostics because domain or range is missing.
+            </div>
+          )}
         </div>
       )}
 
@@ -268,7 +343,7 @@ export function OntologyExplorer({
           onFiltersChange={changeFilters}
           onReset={resetFilters}
           searchQuery={searchQuery}
-          onSearchQueryChange={changeSearchQuery}
+          onSearchQueryChange={setSearchQuery}
           searchResults={searchResults}
           onChooseSearchResult={chooseSearchResult}
         />
@@ -277,6 +352,15 @@ export function OntologyExplorer({
           onKeyDown={handleCanvasKeyDown}
           zoomPercent={graph.zoomPercent}
           onZoomPercentChange={graph.setZoomPercent}
+          status={graph.status}
+          statusMessage={graph.statusMessage}
+          mountedElementCount={graph.mountedElementCount}
+          totalElementCount={graph.totalElementCount}
+          layoutElapsedMs={graph.layoutElapsedMs}
+          onCancelLayout={graph.cancelLayout}
+          onRunCoseLayout={() => graph.runLayout("cose", "current", true)}
+          projection={projection}
+          viewMode={view.mode}
         />
         <OntologyDetailPanel model={model} selectedIds={selectedIds} />
       </div>

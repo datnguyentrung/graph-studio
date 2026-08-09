@@ -84,10 +84,19 @@ export type OntologyFacets = {
   scopes: OntologyScope[];
 };
 
+export type OntologyAdjacency = {
+  nodeIds: string[];
+  edgeIds: string[];
+};
+
 export type CytoscapeGraphModel = {
   elements: ElementDefinition[];
+  elementIndex: Map<string, ElementDefinition>;
   nodeIndex: Map<string, OntologyNodeData>;
   edgeIndex: Map<string, OntologyEdgeData>;
+  adjacencyByNodeId: Map<string, OntologyAdjacency>;
+  subclassChildrenByNodeId: Map<string, string[]>;
+  rootNodeIds: string[];
   propertiesByNodeId: Map<string, OntologyProperty[]>;
   diagnostics: OntologyDiagnostics;
   facets: OntologyFacets;

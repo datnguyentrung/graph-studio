@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { convertToCytoscapeElements } from "./convertToCytoscapeElements";
-import { loadDefaultOntology } from "./ontologyRegistry";
+import { loadOntology } from "./ontologyRegistry";
 import type { OntologyDocument } from "./types";
 
 function documentFixture(
@@ -17,8 +17,10 @@ function documentFixture(
 }
 
 describe("convertToCytoscapeElements", () => {
-  it("converts the real CommercialLoans source without changing its shape", () => {
-    const source = loadDefaultOntology();
+  it("converts the real CommercialLoans source without changing its shape", async () => {
+    const source = await loadOntology(
+      "LOAN/LoansSpecific/CommercialLoans.ontology.json",
+    );
     const model = convertToCytoscapeElements(source);
     const nodes = [...model.nodeIndex.values()];
     const edges = [...model.edgeIndex.values()];
@@ -138,6 +140,46 @@ describe("convertToCytoscapeElements", () => {
     );
 
     expect(subclassEdge?.source).toBe(secondNode?.id);
+  });
+
+  it("treats classes with only external parents as local roots", () => {
+    const model = convertToCytoscapeElements(
+      documentFixture({
+        classes: [
+          {
+            name: "Loan Application",
+            parents: ["cmns-doc:Document"],
+            rules: [],
+          },
+          {
+            name: "Loan Contract",
+            parents: ["Loan Application", "external:Agreement"],
+            rules: [],
+          },
+        ],
+      }),
+    );
+    const rootLabels = model.rootNodeIds.map(
+      (id) => model.nodeIndex.get(id)?.label,
+    );
+
+    expect(rootLabels).toEqual(["Loan Application"]);
+  });
+
+  it("does not treat classes with an internal parent as roots", () => {
+    const model = convertToCytoscapeElements(
+      documentFixture({
+        classes: [
+          { name: "Root", parents: [], rules: [] },
+          { name: "Child", parents: ["Root"], rules: [] },
+        ],
+      }),
+    );
+    const rootLabels = model.rootNodeIds.map(
+      (id) => model.nodeIndex.get(id)?.label,
+    );
+
+    expect(rootLabels).toEqual(["Root"]);
   });
 
   it("reports missing endpoints and unassigned properties without crashing", () => {

@@ -1,7 +1,12 @@
 import { useId, type KeyboardEvent, type RefObject } from "react";
+import type {
+  GraphProjectionResult,
+  GraphViewState,
+} from "../../services/ontology/projectOntologyGraph";
 import {
   MAX_ZOOM_PERCENT,
   MIN_ZOOM_PERCENT,
+  type GraphRuntimeStatus,
 } from "./useCytoscapeGraph";
 
 type CytoscapeCanvasProps = {
@@ -9,6 +14,15 @@ type CytoscapeCanvasProps = {
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   zoomPercent: number;
   onZoomPercentChange: (percent: number) => void;
+  status: GraphRuntimeStatus;
+  statusMessage: string;
+  mountedElementCount: number;
+  totalElementCount: number;
+  layoutElapsedMs: number;
+  onCancelLayout: () => void;
+  onRunCoseLayout: () => void;
+  projection: GraphProjectionResult;
+  viewMode: GraphViewState["mode"];
 };
 
 export function CytoscapeCanvas({
@@ -16,8 +30,26 @@ export function CytoscapeCanvas({
   onKeyDown,
   zoomPercent,
   onZoomPercentChange,
+  status,
+  statusMessage,
+  mountedElementCount,
+  totalElementCount,
+  layoutElapsedMs,
+  onCancelLayout,
+  onRunCoseLayout,
+  projection,
+  viewMode,
 }: CytoscapeCanvasProps) {
   const zoomControlId = useId();
+  const busy = status === "loading-data" ||
+    status === "building-model" ||
+    status === "mounting-graph" ||
+    status === "processing-layout" ||
+    status === "layouting";
+  const processingLayout = status === "processing-layout";
+  const modeLabel = viewMode === "full"
+    ? "Full graph"
+    : viewMode === "overview" ? "Overview" : "Focus";
 
   return (
     <div className="ontology-canvas-wrap">
@@ -25,11 +57,68 @@ export function CytoscapeCanvas({
         ref={containerRef}
         className="ontology-canvas"
         aria-label="Interactive ontology graph"
-        aria-describedby="ontology-canvas-hint"
+        aria-describedby="ontology-canvas-hint ontology-graph-status"
+        aria-busy={busy}
         role="region"
         tabIndex={0}
         onKeyDown={onKeyDown}
       />
+
+      <div
+        id="ontology-graph-status"
+        className={`ontology-graph-budget${projection.truncated ? " ontology-graph-budget--limited" : ""}`}
+        aria-live="polite"
+      >
+        <div className="ontology-graph-budget__heading">
+          <span className="ontology-eyebrow">Graph view</span>
+          <strong>{modeLabel}</strong>
+        </div>
+        <div className="ontology-graph-budget__counts">
+          <span>
+            <strong>{projection.nodeIds.length}</strong>
+            <span>/ {projection.indexedNodeCount} nodes</span>
+          </span>
+          <span>
+            <strong>{projection.edgeIds.length}</strong>
+            <span>/ {projection.indexedEdgeCount} edges</span>
+          </span>
+        </div>
+        {busy && (
+          <span className="ontology-graph-budget__status">
+            <span className="ontology-source-tree__loading" aria-hidden="true" />
+            {statusMessage}
+          </span>
+        )}
+        {status === "mounting-graph" && (
+          <span className="ontology-graph-budget__status">
+            Mounted {mountedElementCount.toLocaleString()} / {totalElementCount.toLocaleString()} elements
+          </span>
+        )}
+        {processingLayout && (
+          <div className="ontology-graph-budget__processing">
+            <span>
+              Processing CoSE layout · {(layoutElapsedMs / 1000).toFixed(1)}s
+            </span>
+            <button type="button" onClick={onCancelLayout}>Cancel layout</button>
+          </div>
+        )}
+        {status === "error" && (
+          <span className="ontology-graph-budget__error" role="alert">
+            {statusMessage}
+          </span>
+        )}
+        {(status === "ready" || status === "error") && (
+          <button type="button" onClick={onRunCoseLayout}>
+            Run CoSE again
+          </button>
+        )}
+        {projection.truncated && (
+          <span className="ontology-graph-budget__limit">
+            View limit reached. Focus a concept or refine filters.
+          </span>
+        )}
+      </div>
+
       <div className="ontology-zoom-control">
         <div className="ontology-zoom-control__header">
           <label htmlFor={zoomControlId}>Zoom</label>

@@ -99,6 +99,7 @@ export function convertToCytoscapeElements(
   document: OntologyDocument,
 ): CytoscapeGraphModel {
   const elements: ElementDefinition[] = [];
+  const elementIndex = new Map<string, ElementDefinition>();
   const nodeIndex = new Map<string, OntologyNodeData>();
   const edgeIndex = new Map<string, OntologyEdgeData>();
   const propertiesByNodeId = new Map<string, OntologyProperty[]>();
@@ -118,7 +119,9 @@ export function convertToCytoscapeElements(
   addFacet(ontologyGroups, group);
 
   function addNode(data: OntologyNodeData, classes?: string): string {
-    elements.push({ data, classes });
+    const element = { data, classes } satisfies ElementDefinition;
+    elements.push(element);
+    elementIndex.set(data.id, element);
     nodeIndex.set(data.id, data);
     addFacet(nodeTypes, data.nodeType);
     addFacet(namespaces, data.namespace);
@@ -128,7 +131,9 @@ export function convertToCytoscapeElements(
   }
 
   function addEdge(data: OntologyEdgeData, classes?: string): void {
-    elements.push({ data, classes });
+    const element = { data, classes } satisfies ElementDefinition;
+    elements.push(element);
+    elementIndex.set(data.id, element);
     edgeIndex.set(data.id, data);
     addFacet(edgeTypes, data.edgeType);
     addFacet(ontologyGroups, data.ontologyGroup);
@@ -323,10 +328,83 @@ export function convertToCytoscapeElements(
     }
   }
 
+  const adjacencySets = new Map<
+    string,
+    { nodeIds: Set<string>; edgeIds: Set<string> }
+  >();
+  const subclassChildrenSets = new Map<string, Set<string>>();
+
+  function ensureAdjacency(nodeId: string) {
+    let adjacency = adjacencySets.get(nodeId);
+    if (!adjacency) {
+      adjacency = { nodeIds: new Set(), edgeIds: new Set() };
+      adjacencySets.set(nodeId, adjacency);
+    }
+    return adjacency;
+  }
+
+  for (const nodeId of nodeIndex.keys()) ensureAdjacency(nodeId);
+
+  for (const edge of edgeIndex.values()) {
+    const sourceAdjacency = ensureAdjacency(edge.source);
+    const targetAdjacency = ensureAdjacency(edge.target);
+    sourceAdjacency.nodeIds.add(edge.target);
+    sourceAdjacency.edgeIds.add(edge.id);
+    targetAdjacency.nodeIds.add(edge.source);
+    targetAdjacency.edgeIds.add(edge.id);
+
+    if (edge.edgeType === "SUBCLASS_OF") {
+      const children = subclassChildrenSets.get(edge.target) ?? new Set<string>();
+      children.add(edge.source);
+      subclassChildrenSets.set(edge.target, children);
+    }
+  }
+
+  const adjacencyByNodeId = new Map(
+    [...adjacencySets].map(([nodeId, adjacency]) => [
+      nodeId,
+      {
+        nodeIds: [...adjacency.nodeIds].sort(),
+        edgeIds: [...adjacency.edgeIds].sort(),
+      },
+    ]),
+  );
+  const subclassChildrenByNodeId = new Map(
+    [...subclassChildrenSets].map(([nodeId, children]) => [
+      nodeId,
+      [...children].sort(),
+    ]),
+  );
+  const classIdsWithInternalParents = new Set(
+    [...edgeIndex.values()]
+      .filter((edge) => {
+        const target = nodeIndex.get(edge.target);
+        return edge.edgeType === "SUBCLASS_OF" &&
+          target?.nodeType === "CLASS" &&
+          target.scope === "internal";
+      })
+      .map((edge) => edge.source),
+  );
+  const rootNodeIds = [...nodeIndex.values()]
+    .filter(
+      (node) =>
+        node.nodeType === "CLASS" &&
+        node.scope === "internal" &&
+        !classIdsWithInternalParents.has(node.id),
+    )
+    .sort((left, right) =>
+      left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
+    )
+    .map((node) => node.id);
+
   return {
     elements,
+    elementIndex,
     nodeIndex,
     edgeIndex,
+    adjacencyByNodeId,
+    subclassChildrenByNodeId,
+    rootNodeIds,
     propertiesByNodeId,
     diagnostics: {
       unresolvedRelationships,

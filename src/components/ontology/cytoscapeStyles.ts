@@ -56,6 +56,7 @@ export const cytoscapeStyles: StylesheetJson = [
       label: "data(label)",
       "font-family": "Cascadia Mono, Consolas, monospace",
       "font-size": 8,
+      "min-zoomed-font-size": 8,
       "line-color": "#47747A",
       "line-opacity": 0.78,
       "target-arrow-color": "#47747A",

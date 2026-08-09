@@ -1,5 +1,20 @@
 # Ontology Page Guide
 
+## Cập nhật: progressive graph cho ontology lớn
+
+- `/` và `/ontology` mở Ontology Explorer; `/mermaid` mở Mermaid viewer.
+- Registry vẫn lazy-load từng file và giữ `all.ontology.json` làm nguồn mặc định.
+- Converter xây full index gồm element lookup, adjacency, subclass children và root class. Full index dùng cho search, detail và traversal; không truyền toàn bộ graph vào Cytoscape.
+- Canvas dùng projection có budget tối đa **350 nodes / 700 edges**:
+  - `overview`: root class và hai tầng subclass con;
+  - `focus`: concept được chọn và neighborhood theo depth;
+  - property chỉ materialize khi filter Properties được bật.
+- Khi đạt budget, UI dừng mở rộng và yêu cầu focus concept hoặc refine filter. `Show all` đã được thay bằng `Back to overview`, `Expand view` và `Reset visibility`.
+- Cytoscape được dynamic-import sau page shell, core chỉ tạo một lần cho mỗi dataset và projection được cập nhật bằng `cy.batch()` add/remove diff.
+- Layout tự động là directed `breadthfirst` cho hierarchy, `grid` cho graph không có subclass. CoSE chỉ được phép khi target có tối đa 150 nodes.
+- Performance marks: `ontology:data-load`, `ontology:model-build`, `ontology:layout`.
+- Quality gates: `npm run quality`, `npm run test:e2e`, và `npx lhci autorun`. Bundle budget là 225 KB gzip cho JS Ontology và 350 KB gzip cho default ontology chunk.
+
 ## 1. Mục đích
 
 Ontology Page là một workspace để đọc, lọc và khám phá ontology dưới dạng graph tương tác. Trang dùng Cytoscape.js để hiển thị class, relationship, subclass và property mà không thay đổi JSON nguồn.
@@ -112,10 +127,27 @@ Toolbar cung cấp `cose`, `breadthfirst`, `circle`, `concentric` và `grid`. La
 
 ## 14. Thêm ontology JSON mới
 
-1. Giữ nguyên JSON trong thư mục dữ liệu.
-2. Import file bằng `?raw` trong `src/services/ontology/ontologyRegistry.ts`.
-3. Thêm một `OntologySourceDefinition` gồm `slug`, `label` và `load()` gọi `parseOntologyJson()`.
-4. Khi bổ sung UI chọn nguồn, chọn registry entry rồi memoize lại converter output; không tạo thêm Cytoscape instance cho cùng dataset.
+1. Thêm file có suffix `*.ontology.json` vào bất kỳ cấp nào bên trong `data/ontology/`.
+2. Khởi động lại Vite dev server nếu file mới chưa xuất hiện qua HMR; production cần build/deploy lại.
+3. Không cần import hoặc đăng ký thủ công. Registry dùng `import.meta.glob` để tạo catalog và lazy loader tại build time.
+4. Dropdown giữ nguyên relative path và cấu trúc thư mục. Chọn file sẽ lazy-load raw JSON, parse, convert rồi thay Cytoscape model mà không reload trang.
+
+Path đã chọn thành công được lưu tại `localStorage` với key `mermaid.ontology.selectedPath`. Khi path đã lưu không còn tồn tại, page fallback về `all.ontology.json`; nếu không có file này thì dùng entry đầu tiên trong catalog đã sort.
+
+Luồng dữ liệu:
+
+```text
+data/ontology/**/*.ontology.json
+  → Vite glob registry
+  → relative-path folder tree
+  → OntologyFileSelector
+  → loadOntology(relativePath)
+  → parseOntologyJson()
+  → convertToCytoscapeElements()
+  → remount OntologyExplorer / Cytoscape
+```
+
+Mỗi ontology là một lazy chunk riêng. Catalog là snapshot do Vite tạo khi dev server/build khởi động, không phải filesystem browser chạy tại runtime.
 
 ## 15. Mở rộng node/edge/property type
 
@@ -129,7 +161,8 @@ Không thêm điều kiện style trực tiếp vào React component.
 
 ## 16. Limitation hiện tại
 
-- Registry v1 chỉ nạp CommercialLoans và chưa có source selector.
+- Registry chỉ phát hiện file tại thời điểm Vite scan; thêm file mới có thể cần restart dev server và luôn cần rebuild production.
+- Nếu ontology mặc định duy nhất không parse được, page hiển thị startup error vì chưa có graph hợp lệ để giữ lại.
 - Relationship thiếu domain hoặc range chỉ nằm trong diagnostics, không thể vẽ thành Cytoscape edge hợp lệ.
 - Chưa có command-language parser.
 - Cytoscape không tự diễn đạt topology như một semantic HTML tree cho screen reader; keyboard traversal và detail panel là lớp truy cập thay thế hiện tại.
@@ -145,37 +178,28 @@ Không thêm điều kiện style trực tiếp vào React component.
 - Dùng compound nodes hoặc server-side clustering cho ontology group lớn.
 - Giữ filter bằng selector/collection/batch như hiện tại để tránh React rerender toàn graph.
 
-## Thay đổi triển khai
+## Cập nhật ontology file selector
 
-### File đã tạo
+### File tạo mới
 
-- `src/routes/routeConfig.ts`, `src/routes/AppRouter.tsx`, `src/routes/routeResolver.ts` và route tests.
-- `src/pages/mermaid/MermaidPage.tsx`.
-- `src/pages/ontology/OntologyPage.tsx`, `src/pages/ontology/ontology.css`.
-- Các component/filter/controller/style trong `src/components/ontology`.
-- Parser, types, visibility contract, registry, converter và tests trong `src/services/ontology`.
-- Search/filter matching, production visibility predicate và tests trong `src/utils/ontology`.
-- `ONTOLOGY_PAGE_GUIDE.md`.
+- `src/components/ontology/OntologyFileSelector.tsx`: controlled tree dropdown, folder navigation và active/loading state.
+- `src/services/ontology/ontologyTree.ts`: tạo folder tree từ relative paths.
+- `src/services/ontology/ontologySelection.ts`: localStorage policy và latest-request guard.
+- `src/services/ontology/ontologyRegistry.spec.ts`, `ontologyTree.spec.ts`, `ontologySelection.spec.ts`: registry, hierarchy, fallback/persistence và race tests.
 
-### File đã sửa
+### File sửa
 
-- `src/App.tsx`: chỉ còn application router entry point.
-- `src/index.css`: loading và Not Found states.
-- `package.json`: thêm test script và Vitest.
+- `OntologyToolbar.tsx`, `OntologyExplorer.tsx`, `OntologyPage.tsx` và `ontology.css`: selector UI, async selection state, error handling và graph remount.
+- `ontologyRegistry.ts`: thay fixed import bằng Vite lazy glob registry.
+- `convertToCytoscapeElements.spec.ts`: load CommercialLoans bằng path cụ thể thay vì phụ thuộc default source.
+- `ONTOLOGY_PAGE_GUIDE.md`: data-flow, cách thêm file và giới hạn bundler.
 
-### Dependency
+Không thêm runtime/development dependency và không thay đổi dữ liệu trong `data/ontology/` trong feature này.
 
-- Runtime: không thêm; `cytoscape` đã có sẵn.
-- Development: thêm `vitest` để kiểm thử routing, converter và search/filter.
+### Kết quả kiểm tra selector gần nhất
 
-### Chức năng chính
-
-Routing theo segment, Mermaid page độc lập, ontology adapter không làm biến đổi JSON, external placeholder, subclass/property graph modes, semantic selection, search, filters, hide/show/isolate, năm layout và node/edge inspector.
-
-### Kết quả kiểm tra gần nhất
-
-- `npm run test`: 4 files, 22 tests pass.
+- `npm run test`: 7 files, 31 tests; 30 pass. Một route test có sẵn vẫn fail vì `/` hiện resolve sang Ontology trong khi test cũ kỳ vọng Mermaid; không thuộc selector feature.
 - `npm run lint`: pass.
-- `npm run build`: pass; entry 61.53 KB gzip, Ontology page 8.57 KB gzip và Cytoscape chunk 137.79 KB gzip.
-- Dev server trả HTTP 200 cho `/`, `/mermaid/deep/path`, `/ontology/deep/path` và `/unknown` để client router xử lý.
-- Browser tương tác chưa chạy được trong phiên triển khai do môi trường không cung cấp browser session; cần thực hiện browser smoke checklist trước khi phát hành.
+- `npm run build`: pass; mỗi ontology được phát hành thành lazy chunk riêng, Ontology page code khoảng 11.7 KB gzip và Cytoscape chunk khoảng 137.8 KB gzip.
+- Dev server trả HTTP 200 cho `/ontology`.
+- Browser tương tác chưa chạy được vì phiên hiện tại không có browser backend; cần chạy smoke checklist expand/select/error/reset trước khi phát hành.

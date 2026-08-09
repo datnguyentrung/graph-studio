@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { resolveRoute } from "./routeResolver";
 
 describe("resolveRoute", () => {
-  it("keeps the root route backward compatible with Mermaid", () => {
+  it("opens the ontology explorer from the root route", () => {
     expect(resolveRoute("/")).toMatchObject({
       kind: "page",
-      segment: "mermaid",
+      segment: "ontology",
       subPath: "",
     });
   });

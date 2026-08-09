@@ -33,7 +33,7 @@ export function createDefaultFilters(
   return {
     showNodes: true,
     showEdges: true,
-    showProperties: false,
+    showProperties: true,
     showParentRelations: true,
     enabledNodeTypes: new Set(facets.nodeTypes),
     enabledEdgeTypes: new Set(facets.edgeTypes),

@@ -7,8 +7,11 @@
     "dev": "vite",
     "start": "vite",
     "build": "tsc -b && vite build",
+    "check:bundle": "node scripts/check-ontology-bundle.mjs",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "quality": "npm run lint && npm test && npm run build && npm run check:bundle",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -19,7 +22,10 @@
     "svg-pan-zoom": "^3.6.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^10.0.1",
+    "@lhci/cli": "^0.15.1",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

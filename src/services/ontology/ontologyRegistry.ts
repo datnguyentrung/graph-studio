@@ -1,28 +1,63 @@
-// import commercialLoansRaw from "../../../data/ontology/LOAN/LoansSpecific/CommercialLoans.ontology.json?raw";
-import raw from "../../../data/ontology/all.ontology.json?raw";
 import { parseOntologyJson } from "./parseOntologyJson";
 import type { OntologyDocument } from "./types";
 
-export type OntologySourceDefinition = {
-  slug: string;
-  label: string;
-  load: () => OntologyDocument;
-};
+const ONTOLOGY_ROOT_PREFIX = "../../../data/ontology/";
+const PREFERRED_DEFAULT_ONTOLOGY_PATH = "all.ontology.json";
 
-export const ontologySources: OntologySourceDefinition[] = [
-  {
-    slug: "loans",
-    label: "Loans",
-    load: () => parseOntologyJson(raw),
-  },
-];
+const rawOntologyLoaders = import.meta.glob<string>(
+  "../../../data/ontology/**/*.ontology.json",
+  { query: "?raw", import: "default" },
+);
 
-export function loadDefaultOntology(): OntologyDocument {
-  const defaultSource = ontologySources[0];
+const ontologyLoaders = new Map<string, () => Promise<string>>(
+  Object.entries(rawOntologyLoaders).map(([modulePath, loader]) => [
+    modulePath.replace(ONTOLOGY_ROOT_PREFIX, "").replaceAll("\\", "/"),
+    loader,
+  ]),
+);
 
-  if (!defaultSource) {
-    throw new Error("No ontology data source is registered.");
+const ontologyPaths = [...ontologyLoaders.keys()].sort((left, right) =>
+  left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }),
+);
+
+export function getOntologyPaths(): readonly string[] {
+  return ontologyPaths;
+}
+
+export function hasOntology(path: string): boolean {
+  return ontologyLoaders.has(path);
+}
+
+export function getDefaultOntologyPath(): string {
+  const defaultPath = hasOntology(PREFERRED_DEFAULT_ONTOLOGY_PATH)
+    ? PREFERRED_DEFAULT_ONTOLOGY_PATH
+    : ontologyPaths[0];
+
+  if (!defaultPath) {
+    throw new Error("No ontology data source was found.");
   }
 
-  return defaultSource.load();
+  return defaultPath;
+}
+
+export function resolveOntologyPath(storedPath: string | null): string {
+  return storedPath && hasOntology(storedPath)
+    ? storedPath
+    : getDefaultOntologyPath();
+}
+
+export async function loadOntology(path: string): Promise<OntologyDocument> {
+  const loader = ontologyLoaders.get(path);
+  if (!loader) {
+    throw new Error(`Ontology source was not found: ${path}`);
+  }
+
+  try {
+    return parseOntologyJson(await loader());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    throw new Error(`Could not load ontology "${path}": ${message}`, {
+      cause: error,
+    });
+  }
 }

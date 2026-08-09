@@ -34,7 +34,6 @@ dist-ssr
 skills-lock.json
 
 # Local assistant/tooling state
-package-lock.json
 .codegraph/
 .impeccable/
 .claude/settings.local.json
@@ -43,3 +42,13 @@ package-lock.json
 .agents**
 .codegraph**
 .gemini**
+
+# Test and audit artifacts
+playwright-report/
+test-results/
+.lighthouseci/
+
+# Quality workflows are part of the product source.
+!.github/
+!.github/workflows/
+!.github/workflows/ontology-quality.yml
