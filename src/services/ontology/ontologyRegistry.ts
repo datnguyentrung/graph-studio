@@ -2,7 +2,7 @@ import { parseOntologyJson } from "./parseOntologyJson";
 import type { OntologyDocument } from "./types";
 
 const ONTOLOGY_ROOT_PREFIX = "../../../data/ontology/";
-const PREFERRED_DEFAULT_ONTOLOGY_PATH = "LOAN/all_loan.ontology.json";
+const PREFERRED_DEFAULT_ONTOLOGY_PATH = "all.ontology.json";
 
 const rawOntologyLoaders = import.meta.glob<string>(
   "../../../data/ontology/**/*.ontology.json",

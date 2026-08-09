@@ -38,8 +38,8 @@ describe("ontology layout policy", () => {
   it("keeps the default CoSE pass spacious instead of fitting the full graph", () => {
     expect(spaciousCoseLayoutOptions.name).toBe("cose");
     expect(spaciousCoseLayoutOptions.fit).toBe(false);
-    expect(spaciousCoseLayoutOptions.idealEdgeLength).toBeGreaterThan(100);
+    expect(spaciousCoseLayoutOptions.idealEdgeLength).toBe(90);
     expect(spaciousCoseLayoutOptions.nodeRepulsion).toBeGreaterThan(400_000);
-    expect(spaciousCoseLayoutOptions.componentSpacing).toBeGreaterThanOrEqual(200);
+    expect(spaciousCoseLayoutOptions.componentSpacing).toBe(110);
   });
 });

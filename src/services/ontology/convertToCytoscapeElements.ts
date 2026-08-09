@@ -6,6 +6,7 @@ import type {
   OntologyEdgeData,
   OntologyEdgeType,
   OntologyEntityMetadata,
+  OntologyLocation,
   OntologyNodeData,
   OntologyNodeType,
   OntologyProperty,
@@ -13,6 +14,8 @@ import type {
 } from "./types";
 
 const EMPTY_LABEL = "Unnamed concept";
+const DEFAULT_ONTOLOGY_ROOT = "FIBO";
+const UNGROUPED_LOCATION = "Ungrouped";
 
 function clean(value: string | undefined): string {
   return value?.trim() ?? "";
@@ -57,6 +60,33 @@ function namespaceOf(entity: OntologyEntityMetadata): string {
   }
 
   return "unknown";
+}
+
+function locationOf(entity: OntologyEntityMetadata): OntologyLocation {
+  const iri = clean(entity.iri);
+  const marker = "/fibo/ontology/";
+  const markerIndex = iri.toLocaleLowerCase().indexOf(marker);
+
+  if (markerIndex >= 0) {
+    const path = iri.slice(markerIndex + marker.length);
+    const [domain, module] = path.split("/").filter(Boolean);
+
+    if (domain && module) {
+      return { root: DEFAULT_ONTOLOGY_ROOT, domain, module };
+    }
+
+    if (domain) {
+      return { root: DEFAULT_ONTOLOGY_ROOT, domain, module: UNGROUPED_LOCATION };
+    }
+  }
+
+  const namespace = namespaceOf(entity);
+  const domain = namespace === "unknown" ? UNGROUPED_LOCATION : namespace;
+  return {
+    root: DEFAULT_ONTOLOGY_ROOT,
+    domain,
+    module: UNGROUPED_LOCATION,
+  };
 }
 
 function ontologyGroup(document: OntologyDocument): string {
@@ -113,6 +143,7 @@ export function convertToCytoscapeElements(
   const ontologyGroups = new Set<string>();
   const scopes = new Set<OntologyScope>();
   const group = ontologyGroup(document);
+  const locationByNodeId = new Map<string, OntologyLocation>();
   const unresolvedRelationships = [];
   const unassignedProperties: OntologyProperty[] = [];
 
@@ -123,6 +154,7 @@ export function convertToCytoscapeElements(
     elements.push(element);
     elementIndex.set(data.id, element);
     nodeIndex.set(data.id, data);
+    locationByNodeId.set(data.id, locationOf(data));
     addFacet(nodeTypes, data.nodeType);
     addFacet(namespaces, data.namespace);
     addFacet(ontologyGroups, data.ontologyGroup);
@@ -333,6 +365,7 @@ export function convertToCytoscapeElements(
     { nodeIds: Set<string>; edgeIds: Set<string> }
   >();
   const subclassChildrenSets = new Map<string, Set<string>>();
+  const subclassParentSets = new Map<string, Set<string>>();
 
   function ensureAdjacency(nodeId: string) {
     let adjacency = adjacencySets.get(nodeId);
@@ -357,6 +390,9 @@ export function convertToCytoscapeElements(
       const children = subclassChildrenSets.get(edge.target) ?? new Set<string>();
       children.add(edge.source);
       subclassChildrenSets.set(edge.target, children);
+      const parents = subclassParentSets.get(edge.source) ?? new Set<string>();
+      parents.add(edge.target);
+      subclassParentSets.set(edge.source, parents);
     }
   }
 
@@ -373,6 +409,12 @@ export function convertToCytoscapeElements(
     [...subclassChildrenSets].map(([nodeId, children]) => [
       nodeId,
       [...children].sort(),
+    ]),
+  );
+  const subclassParentsByNodeId = new Map(
+    [...subclassParentSets].map(([nodeId, parents]) => [
+      nodeId,
+      [...parents].sort(),
     ]),
   );
   const classIdsWithInternalParents = new Set(
@@ -396,6 +438,35 @@ export function convertToCytoscapeElements(
       left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
     )
     .map((node) => node.id);
+  const nodeIdsByDomainSets = new Map<string, Set<string>>();
+  const nodeIdsByModuleSets = new Map<string, Set<string>>();
+
+  for (const node of nodeIndex.values()) {
+    if (node.scope !== "internal") continue;
+    const location = locationByNodeId.get(node.id);
+    if (!location) continue;
+    const domainSet = nodeIdsByDomainSets.get(location.domain) ?? new Set<string>();
+    domainSet.add(node.id);
+    nodeIdsByDomainSets.set(location.domain, domainSet);
+
+    const moduleKey = `${location.domain}/${location.module}`;
+    const moduleSet = nodeIdsByModuleSets.get(moduleKey) ?? new Set<string>();
+    moduleSet.add(node.id);
+    nodeIdsByModuleSets.set(moduleKey, moduleSet);
+  }
+
+  const nodeIdsByDomain = new Map(
+    [...nodeIdsByDomainSets].map(([domain, nodeIds]) => [
+      domain,
+      [...nodeIds].sort(),
+    ]),
+  );
+  const nodeIdsByModule = new Map(
+    [...nodeIdsByModuleSets].map(([moduleKey, nodeIds]) => [
+      moduleKey,
+      [...nodeIds].sort(),
+    ]),
+  );
 
   return {
     elements,
@@ -404,8 +475,12 @@ export function convertToCytoscapeElements(
     edgeIndex,
     adjacencyByNodeId,
     subclassChildrenByNodeId,
+    subclassParentsByNodeId,
     rootNodeIds,
     propertiesByNodeId,
+    locationByNodeId,
+    nodeIdsByDomain,
+    nodeIdsByModule,
     diagnostics: {
       unresolvedRelationships,
       unassignedProperties,

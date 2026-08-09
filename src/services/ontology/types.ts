@@ -89,6 +89,12 @@ export type OntologyAdjacency = {
   edgeIds: string[];
 };
 
+export type OntologyLocation = {
+  root: string;
+  domain: string;
+  module: string;
+};
+
 export type CytoscapeGraphModel = {
   elements: ElementDefinition[];
   elementIndex: Map<string, ElementDefinition>;
@@ -96,8 +102,12 @@ export type CytoscapeGraphModel = {
   edgeIndex: Map<string, OntologyEdgeData>;
   adjacencyByNodeId: Map<string, OntologyAdjacency>;
   subclassChildrenByNodeId: Map<string, string[]>;
+  subclassParentsByNodeId: Map<string, string[]>;
   rootNodeIds: string[];
   propertiesByNodeId: Map<string, OntologyProperty[]>;
+  locationByNodeId: Map<string, OntologyLocation>;
+  nodeIdsByDomain: Map<string, string[]>;
+  nodeIdsByModule: Map<string, string[]>;
   diagnostics: OntologyDiagnostics;
   facets: OntologyFacets;
 };

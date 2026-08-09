@@ -33,6 +33,45 @@ export const cytoscapeStyles: StylesheetJson = [
     },
   },
   {
+    selector: "node.view-node",
+    style: {
+      "background-color": "#EDF3F4",
+      "border-color": "#147D84",
+      "border-width": 3,
+      color: "#18282E",
+      "font-size": 12,
+      height: 62,
+      "text-wrap": "wrap",
+      "text-max-width": "120px",
+      width: 62,
+    },
+  },
+  {
+    selector: "node.root-node",
+    style: {
+      "background-color": "#18282E",
+      "border-color": "#72C9CD",
+      color: "#18282E",
+      height: 76,
+      width: 76,
+    },
+  },
+  {
+    selector: "node.domain-node",
+    style: {
+      "background-color": "#D0EAEB",
+      shape: "round-rectangle",
+    },
+  },
+  {
+    selector: "node.module-node",
+    style: {
+      "background-color": "#E2DCF7",
+      "border-color": "#7557D6",
+      shape: "round-tag",
+    },
+  },
+  {
     selector: "node.property-node",
     style: {
       "background-color": "#F4D8B5",

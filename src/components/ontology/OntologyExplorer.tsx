@@ -7,10 +7,15 @@ import {
   type KeyboardEvent,
 } from "react";
 import {
+  chooseOntologyRenderingStrategy,
   createDefaultGraphView,
   getOntologyNeighborhoodIds,
+  isHierarchyNodeExpanded,
   projectOntologyGraph,
+  setHierarchyRelationshipSeed,
   toFocusView,
+  toHierarchyViewForNode,
+  toggleHierarchyExpansion,
   type GraphViewState,
 } from "../../services/ontology/projectOntologyGraph";
 import type {
@@ -75,9 +80,17 @@ export function OntologyExplorer({
   );
   const [isolatedIds, setIsolatedIds] = useState<Set<string> | null>(null);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
-  const [view, setView] = useState<GraphViewState>(createDefaultGraphView);
+  const renderingStrategy = useMemo(
+    () => chooseOntologyRenderingStrategy(model),
+    [model],
+  );
+  const [view, setView] = useState<GraphViewState>(() =>
+    createDefaultGraphView(renderingStrategy),
+  );
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
-  const [layoutName, setLayoutName] = useState<LayoutName>("cose");
+  const [layoutName, setLayoutName] = useState<LayoutName>(
+    renderingStrategy === "progressive" ? "breadthfirst" : "cose",
+  );
   const [layoutTarget, setLayoutTarget] = useState<LayoutTarget>("current");
   const [fitAfterLayout, setFitAfterLayout] = useState(true);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
@@ -101,9 +114,24 @@ export function OntologyExplorer({
     setSelectedIds(ids);
     if (ids.length > 0) setShowMobileDetail(true);
   }, []);
+  const activateProgressiveNode = useCallback((nodeId: string | undefined) => {
+    if (renderingStrategy !== "progressive" || !nodeId) return;
+    setView((current) => {
+      if (projection.truncated && !isHierarchyNodeExpanded(current, nodeId)) {
+        return current;
+      }
+      return toggleHierarchyExpansion(model, current, nodeId);
+    });
+  }, [model, projection.truncated, renderingStrategy]);
   const graph = useCytoscapeGraph({
     elements: projection.elements,
     onSelectionChange: handleSelectionChange,
+    onNodePrimaryAction: renderingStrategy === "progressive"
+      ? activateProgressiveNode
+      : undefined,
+    automaticLayoutName: renderingStrategy === "progressive"
+      ? "breadthfirst"
+      : undefined,
   });
 
   useEffect(() => {
@@ -151,7 +179,11 @@ export function OntologyExplorer({
 
   function chooseSearchResult(id: string) {
     revealElements([id]);
-    setView(toFocusView(model, [id]));
+    setView(
+      renderingStrategy === "progressive"
+        ? toHierarchyViewForNode(model, id)
+        : toFocusView(model, [id]),
+    );
     setPendingFocusId(id);
   }
 
@@ -202,12 +234,16 @@ export function OntologyExplorer({
   }
 
   function backToFullGraph() {
-    setView(createDefaultGraphView());
+    setView(createDefaultGraphView(renderingStrategy));
     setPendingFocusId(null);
     graph.clearSelection();
   }
 
   function expandView() {
+    if (renderingStrategy === "progressive") {
+      activateProgressiveNode(selectedIds[0]);
+      return;
+    }
     setView((current) => {
       if (current.mode === "focus") {
         return { ...current, depth: current.depth + 1 };
@@ -215,13 +251,19 @@ export function OntologyExplorer({
       if (current.mode === "full") {
         return selectedIds.length > 0
           ? toFocusView(model, selectedIds, 2)
-          : { mode: "overview", depth: 3 };
+          : { mode: "overview" };
       }
       if (selectedIds.length > 0) {
         return toFocusView(model, selectedIds, 2);
       }
-      return { ...current, depth: current.depth + 1 };
+      return { mode: "overview" };
     });
+  }
+
+  function showRelationships() {
+    const realSelectedIds = selectedIds.filter((id) => model.nodeIndex.has(id));
+    if (renderingStrategy !== "progressive" || realSelectedIds.length === 0) return;
+    setView((current) => setHierarchyRelationshipSeed(current, realSelectedIds));
   }
 
   function changeFilters(nextFilters: OntologyFilterState) {
@@ -239,6 +281,13 @@ export function OntologyExplorer({
     } else if (event.key === "Escape") {
       event.preventDefault();
       graph.clearSelection();
+    } else if (
+      renderingStrategy === "progressive" &&
+      (event.key === "Enter" || event.key === " ") &&
+      selectedIds.length > 0
+    ) {
+      event.preventDefault();
+      activateProgressiveNode(selectedIds[0]);
     }
   }
 
@@ -276,7 +325,12 @@ export function OntologyExplorer({
         ontologySelector={ontologySelector}
         selectedCount={selectedIds.length}
         viewMode={view.mode}
-        canExpand={view.mode !== "full" && !projection.truncated}
+        progressive={renderingStrategy === "progressive"}
+        canExpand={
+          renderingStrategy === "progressive"
+            ? selectedIds.length > 0 && !projection.truncated
+            : view.mode !== "full" && !projection.truncated
+        }
         graphReady={graphReady}
         layoutName={layoutName}
         layoutTarget={layoutTarget}
@@ -295,6 +349,7 @@ export function OntologyExplorer({
         onHideSelected={() => hideElements(selectedIds)}
         onIsolateSelected={isolateSelected}
         onShowNeighbors={() => showNeighbors(1)}
+        onShowRelationships={showRelationships}
         onHideNeighbors={hideNeighbors}
         onBackToOverview={backToFullGraph}
         onExpandView={expandView}
@@ -361,6 +416,7 @@ export function OntologyExplorer({
           onRunCoseLayout={() => graph.runLayout("cose", "current", true)}
           projection={projection}
           viewMode={view.mode}
+          progressive={renderingStrategy === "progressive"}
         />
         <OntologyDetailPanel model={model} selectedIds={selectedIds} />
       </div>

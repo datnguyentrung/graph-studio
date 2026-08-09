@@ -37,6 +37,8 @@ export const MAX_ZOOM_PERCENT = 500;
 const DEFAULT_ZOOM_PERCENT = 100;
 const GRAPH_MOUNT_CHUNK_SIZE = 512;
 const LARGE_GRAPH_OVERVIEW_ZOOM = 0.85;
+const DOUBLE_TAP_DELAY_MS = 500;
+const PROGRESSIVE_ROOT_ID = "view:ontology-root:FIBO";
 
 type CoseLayoutResponse =
   | {
@@ -114,17 +116,24 @@ export type CytoscapeGraphController = {
 type UseCytoscapeGraphOptions = {
   elements: ElementDefinition[];
   onSelectionChange: (ids: string[]) => void;
+  onNodePrimaryAction?: (id: string) => void;
+  automaticLayoutName?: LayoutName;
 };
 
 export function useCytoscapeGraph({
   elements,
   onSelectionChange,
+  onNodePrimaryAction,
+  automaticLayoutName,
 }: UseCytoscapeGraphOptions): CytoscapeGraphController {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const elementsRef = useRef(elements);
   const onSelectionChangeRef = useRef(onSelectionChange);
+  const onNodePrimaryActionRef = useRef(onNodePrimaryAction);
+  const lastTappedNodeRef = useRef<{ id: string; at: number } | null>(null);
   const layoutFrameRef = useRef<number | null>(null);
+  const layoutCleanupRef = useRef<(() => void) | null>(null);
   const layoutRequestRef = useRef(0);
   const workerRef = useRef<Worker | null>(null);
   const layoutStartedAtRef = useRef(0);
@@ -149,6 +158,10 @@ export function useCytoscapeGraph({
     onSelectionChangeRef.current = onSelectionChange;
   }, [onSelectionChange]);
 
+  useEffect(() => {
+    onNodePrimaryActionRef.current = onNodePrimaryAction;
+  }, [onNodePrimaryAction]);
+
   const cancelLayout = useCallback(() => {
     layoutRequestRef.current += 1;
     if (layoutFrameRef.current !== null) {
@@ -157,6 +170,8 @@ export function useCytoscapeGraph({
     }
     workerRef.current?.terminate();
     workerRef.current = null;
+    layoutCleanupRef.current?.();
+    layoutCleanupRef.current = null;
     setStatus("ready");
     setStatusMessage("CoSE layout cancelled. The graph remains usable.");
   }, []);
@@ -167,6 +182,7 @@ export function useCytoscapeGraph({
     target: LayoutTarget,
     shouldFit: boolean,
     requestId: number,
+    onComplete?: () => void,
   ) => {
     if (layoutFrameRef.current !== null) {
       window.cancelAnimationFrame(layoutFrameRef.current);
@@ -183,18 +199,29 @@ export function useCytoscapeGraph({
         if (collection.nodes().length < 2) {
           setStatus("ready");
           setStatusMessage("");
+          onComplete?.();
           return;
         }
 
         try {
           performance.mark("ontology:layout-start");
+          const progressiveRoot = collection.getElementById(PROGRESSIVE_ROOT_ID);
           const options = {
             name,
             animate: false,
             fit: shouldFit,
             padding: 56,
             ...(name === "breadthfirst"
-              ? { directed: true, direction: "downward", spacingFactor: 1.35 }
+              ? {
+                  // SUBCLASS_OF is stored child -> parent. Traverse it as an
+                  // undirected hierarchy when the synthetic FIBO root exists.
+                  directed: progressiveRoot.empty(),
+                  direction: "downward",
+                  spacingFactor: 1.35,
+                  roots: progressiveRoot.nonempty()
+                    ? progressiveRoot
+                    : undefined,
+                }
               : {}),
           } as LayoutOptions;
           collection.layout(options).run();
@@ -206,7 +233,9 @@ export function useCytoscapeGraph({
           );
           setStatus("ready");
           setStatusMessage("");
+          onComplete?.();
         } catch (error) {
+          onComplete?.();
           setStatus("error");
           setStatusMessage(
             error instanceof Error ? error.message : "The graph layout failed.",
@@ -312,7 +341,19 @@ export function useCytoscapeGraph({
     name: LayoutName,
     target: LayoutTarget,
     shouldFit: boolean,
+    onComplete?: () => void,
   ) => {
+    layoutCleanupRef.current?.();
+    layoutCleanupRef.current = null;
+    const finishLayout = onComplete
+      ? () => {
+          if (layoutCleanupRef.current === finishLayout) {
+            layoutCleanupRef.current = null;
+          }
+          onComplete();
+        }
+      : undefined;
+    layoutCleanupRef.current = finishLayout ?? null;
     layoutRequestRef.current += 1;
     const requestId = layoutRequestRef.current;
     workerRef.current?.terminate();
@@ -322,15 +363,22 @@ export function useCytoscapeGraph({
       runCoseWorkerLayout(cy, target, shouldFit, requestId);
       return;
     }
-    runDirectLayout(cy, name, target, shouldFit, requestId);
+    runDirectLayout(cy, name, target, shouldFit, requestId, finishLayout);
   }, [runCoseWorkerLayout, runDirectLayout]);
 
   const syncProjection = useCallback(async (
     cy: Core,
     nextElements: ElementDefinition[],
     requestId: number,
-  ) => {
+  ): Promise<{
+    mounted: boolean;
+    addedNodeIds: string[];
+    retainedNodeIds: string[];
+  }> => {
     const nextIds = new Set(nextElements.map(definitionId));
+    const retainedNodeIds = cy.nodes()
+      .filter((node) => nextIds.has(node.id()))
+      .map((node) => node.id());
     const nodesToAdd = nextElements.filter(
       (element) =>
         !isOntologyEdgeDefinition(element) &&
@@ -356,7 +404,9 @@ export function useCytoscapeGraph({
     });
 
     for (let index = 0; index < addQueue.length; index += GRAPH_MOUNT_CHUNK_SIZE) {
-      if (requestId !== layoutRequestRef.current || cy.destroyed()) return false;
+      if (requestId !== layoutRequestRef.current || cy.destroyed()) {
+        return { mounted: false, addedNodeIds: [], retainedNodeIds: [] };
+      }
       cy.batch(() => {
         cy.add(addQueue.slice(index, index + GRAPH_MOUNT_CHUNK_SIZE));
       });
@@ -369,7 +419,11 @@ export function useCytoscapeGraph({
 
     setMountedElementCount(cy.elements().length);
     performance.mark("ontology:graph-elements-ready");
-    return true;
+    return {
+      mounted: true,
+      addedNodeIds: nodesToAdd.map(definitionId),
+      retainedNodeIds,
+    };
   }, []);
 
   useEffect(() => {
@@ -415,20 +469,40 @@ export function useCytoscapeGraph({
         const clearSelection = (event: EventObject) => {
           if (event.target === cy) cy.$(":selected").unselect();
         };
+        const activateNode = (event: EventObject) => {
+          const id = event.target.id();
+          const now = performance.now();
+          const previous = lastTappedNodeRef.current;
+          lastTappedNodeRef.current = { id, at: now };
+          const pointerEvent = event.originalEvent as MouseEvent | PointerEvent | undefined;
+          const nativeDoubleClick = (pointerEvent?.detail ?? 0) >= 2;
+          if (
+            nativeDoubleClick ||
+            (
+              previous !== null &&
+              previous.id === id &&
+              now - previous.at <= DOUBLE_TAP_DELAY_MS
+            )
+          ) {
+            lastTappedNodeRef.current = null;
+            onNodePrimaryActionRef.current?.(id);
+          }
+        };
 
         cy.on("select unselect", "node, edge", emitSelection);
         cy.on("zoom", emitZoom);
         cy.on("tap", clearSelection);
+        cy.on("tap", "node", activateNode);
         cyRef.current = cy;
         performance.mark("ontology:graph-engine-ready");
         layoutRequestRef.current += 1;
         const requestId = layoutRequestRef.current;
-        const mounted = await syncProjection(cy, elementsRef.current, requestId);
-        if (cancelled || !mounted) return;
+        const syncResult = await syncProjection(cy, elementsRef.current, requestId);
+        if (cancelled || !syncResult.mounted) return;
         emitZoom();
         scheduleLayout(
           cy,
-          chooseAutomaticOntologyLayout(elementsRef.current),
+          automaticLayoutName ?? chooseAutomaticOntologyLayout(elementsRef.current),
           "current",
           true,
         );
@@ -449,21 +523,57 @@ export function useCytoscapeGraph({
       }
       workerRef.current?.terminate();
       workerRef.current = null;
+      layoutCleanupRef.current?.();
+      layoutCleanupRef.current = null;
+      lastTappedNodeRef.current = null;
+      if (localCore && !localCore.destroyed()) {
+        localCore.off("select unselect", "node, edge");
+        localCore.off("zoom");
+        localCore.off("tap");
+      }
       if (cyRef.current === localCore) cyRef.current = null;
       localCore?.destroy();
     };
-  }, [scheduleLayout, syncProjection]);
+  }, [automaticLayoutName, scheduleLayout, syncProjection]);
 
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
     layoutRequestRef.current += 1;
     const requestId = layoutRequestRef.current;
-    void syncProjection(cy, elements, requestId).then((mounted) => {
-      if (!mounted || requestId !== layoutRequestRef.current || cy.destroyed()) return;
-      scheduleLayout(cy, chooseAutomaticOntologyLayout(elements), "current", true);
+    void syncProjection(cy, elements, requestId).then((syncResult) => {
+      if (!syncResult.mounted || requestId !== layoutRequestRef.current || cy.destroyed()) return;
+      const progressiveUpdate = automaticLayoutName === "breadthfirst" &&
+        syncResult.retainedNodeIds.length > 0;
+      if (progressiveUpdate && syncResult.addedNodeIds.length === 0) {
+        setStatus("ready");
+        setStatusMessage("");
+        return;
+      }
+      const retainedNodeIdSet = new Set(syncResult.retainedNodeIds);
+      const retainedNodes = progressiveUpdate
+        ? cy.nodes().filter((node) => retainedNodeIdSet.has(node.id()))
+        : cy.collection();
+      retainedNodes.lock();
+      scheduleLayout(
+        cy,
+        automaticLayoutName ?? chooseAutomaticOntologyLayout(elements),
+        "current",
+        !progressiveUpdate,
+        progressiveUpdate
+          ? () => {
+              retainedNodes.unlock();
+              const addedNodeIdSet = new Set(syncResult.addedNodeIds);
+              const addedNodes = cy.nodes().filter((node) => addedNodeIdSet.has(node.id()));
+              const branch = addedNodes
+                .union(addedNodes.connectedEdges())
+                .union(addedNodes.connectedNodes());
+              if (branch.nonempty()) cy.fit(branch, 80);
+            }
+          : undefined,
+      );
     });
-  }, [elements, scheduleLayout, syncProjection]);
+  }, [automaticLayoutName, elements, scheduleLayout, syncProjection]);
 
   const setZoomPercent = useCallback((percent: number) => {
     const cy = cyRef.current;

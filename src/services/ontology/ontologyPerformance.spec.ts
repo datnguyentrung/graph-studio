@@ -4,6 +4,7 @@ import {
   chooseAutomaticOntologyLayout,
 } from "./ontologyLayoutPolicy";
 import {
+  chooseOntologyRenderingStrategy,
   createDefaultGraphView,
   projectOntologyGraph,
 } from "./projectOntologyGraph";
@@ -11,14 +12,14 @@ import { loadOntology } from "./ontologyRegistry";
 import { createDefaultFilters } from "./visibilityTypes";
 
 describe("aggregate ontology performance budget", () => {
-  it("projects the full initial view without a long blocking task", async () => {
+  it("projects a small progressive initial view without a long blocking task", async () => {
     const model = convertToCytoscapeElements(
       await loadOntology("all.ontology.json"),
     );
     const projectionStart = performance.now();
     const projection = projectOntologyGraph(
       model,
-      createDefaultGraphView(),
+      createDefaultGraphView("progressive"),
       {
         ...createDefaultFilters(model.facets),
         manuallyHiddenIds: new Set(),
@@ -31,9 +32,12 @@ describe("aggregate ontology performance budget", () => {
 
     expect(model.nodeIndex.size).toBe(3342);
     expect(model.edgeIndex.size).toBe(4929);
-    expect(projection.nodeIds).toHaveLength(3342);
-    expect(projection.edgeIds).toHaveLength(4929);
+    expect(chooseOntologyRenderingStrategy(model)).toBe("progressive");
+    expect(projection.nodeIds.length).toBeLessThan(ONTOLOGY_GRAPH_INITIAL_LIMIT);
+    expect(projection.edgeIds.length).toBeLessThan(ONTOLOGY_GRAPH_INITIAL_LIMIT);
     expect(layoutName).toBe("cose");
     expect(projectionDuration).toBeLessThan(200);
   });
 });
+
+const ONTOLOGY_GRAPH_INITIAL_LIMIT = 100;

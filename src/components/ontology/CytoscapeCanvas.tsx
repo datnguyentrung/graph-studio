@@ -23,6 +23,7 @@ type CytoscapeCanvasProps = {
   onRunCoseLayout: () => void;
   projection: GraphProjectionResult;
   viewMode: GraphViewState["mode"];
+  progressive: boolean;
 };
 
 export function CytoscapeCanvas({
@@ -39,6 +40,7 @@ export function CytoscapeCanvas({
   onRunCoseLayout,
   projection,
   viewMode,
+  progressive,
 }: CytoscapeCanvasProps) {
   const zoomControlId = useId();
   const busy = status === "loading-data" ||
@@ -49,7 +51,9 @@ export function CytoscapeCanvas({
   const processingLayout = status === "processing-layout";
   const modeLabel = viewMode === "full"
     ? "Full graph"
-    : viewMode === "overview" ? "Overview" : "Focus";
+    : viewMode === "overview"
+      ? "Overview"
+      : viewMode === "hierarchy" ? "Hierarchy" : "Focus";
 
   return (
     <div className="ontology-canvas-wrap">
@@ -62,6 +66,9 @@ export function CytoscapeCanvas({
         role="region"
         tabIndex={0}
         onKeyDown={onKeyDown}
+        title={progressive
+          ? "Double-click a domain, module, or class to expand or collapse it"
+          : undefined}
       />
 
       <div
@@ -114,7 +121,7 @@ export function CytoscapeCanvas({
         )}
         {projection.truncated && (
           <span className="ontology-graph-budget__limit">
-            View limit reached. Focus a concept or refine filters.
+            View limit reached. Collapse another branch, search, or focus a concept.
           </span>
         )}
       </div>
@@ -136,7 +143,8 @@ export function CytoscapeCanvas({
         />
       </div>
       <div id="ontology-canvas-hint" className="ontology-canvas__hint">
-        Scroll: zoom · drag: pan · arrows: inspect · Shift + arrows: multi-select · Esc: clear
+        Scroll: zoom · drag: pan · arrows: inspect · Shift + arrows: multi-select
+        {progressive ? " · double-click/Enter/Space: expand or collapse" : ""} · Esc: clear
       </div>
     </div>
   );

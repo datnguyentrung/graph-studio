@@ -9,6 +9,7 @@ type OntologyToolbarProps = {
   ontologySelector: OntologyFileSelectorProps;
   selectedCount: number;
   viewMode: GraphViewState["mode"];
+  progressive: boolean;
   canExpand: boolean;
   graphReady: boolean;
   layoutName: LayoutName;
@@ -28,6 +29,7 @@ type OntologyToolbarProps = {
   onHideSelected: () => void;
   onIsolateSelected: () => void;
   onShowNeighbors: () => void;
+  onShowRelationships: () => void;
   onHideNeighbors: () => void;
   onBackToOverview: () => void;
   onExpandView: () => void;
@@ -39,6 +41,7 @@ export function OntologyToolbar({
   ontologySelector,
   selectedCount,
   viewMode,
+  progressive,
   canExpand,
   graphReady,
   layoutName,
@@ -58,6 +61,7 @@ export function OntologyToolbar({
   onHideSelected,
   onIsolateSelected,
   onShowNeighbors,
+  onShowRelationships,
   onHideNeighbors,
   onBackToOverview,
   onExpandView,
@@ -87,6 +91,13 @@ export function OntologyToolbar({
           <button type="button" onClick={onHideSelected} disabled={noSelection}>Hide</button>
           <button type="button" onClick={onIsolateSelected} disabled={noSelection}>Isolate</button>
           <button type="button" onClick={onShowNeighbors} disabled={noSelection}>1-hop</button>
+          <button
+            type="button"
+            onClick={onShowRelationships}
+            disabled={noSelection || !progressive}
+          >
+            Relationships
+          </button>
           <button type="button" onClick={onHideNeighbors} disabled={noSelection}>Hide neighbors</button>
         </div>
 
@@ -95,12 +106,12 @@ export function OntologyToolbar({
           <button
             type="button"
             onClick={onBackToOverview}
-            disabled={viewMode === "full"}
+            disabled={progressive ? viewMode === "overview" : viewMode === "full"}
           >
-            Back to full graph
+            {progressive ? "Back to overview" : "Back to full graph"}
           </button>
           <button type="button" onClick={onExpandView} disabled={!canExpand}>
-            Expand view
+            {progressive ? "Expand / collapse" : "Expand view"}
           </button>
           <button type="button" onClick={onResetVisibility}>Reset visibility</button>
         </div>
