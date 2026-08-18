@@ -6,6 +6,7 @@ import {
 
 export type RoutePageProps = {
   subPath: string;
+  search: string;
 };
 
 export type AppRoute = {

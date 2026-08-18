@@ -24,10 +24,10 @@ export const spaciousCoseLayoutOptions = {
   animate: false,
   fit: false,
   padding: 160,
-  idealEdgeLength: 90,
-  nodeOverlap: 24,
-  nodeRepulsion: 900000,
-  componentSpacing: 110,
+  idealEdgeLength: 120,    // tăng khoảng cách trung bình giữa các node nối với nhau
+  nodeOverlap: 60,        // tăng để tránh node chồng/lấn nhau hơn
+  nodeRepulsion: 3000000,  // tăng lực đẩy giữa node, làm node giãn xa hơn
+  componentSpacing: 110,  // tăng khoảng cách giữa các cụm/component rời nhau
   nestingFactor: 1.3,
   gravity: 0.18,
   numIter: 2500,

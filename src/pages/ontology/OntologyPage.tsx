@@ -7,10 +7,11 @@ import {
   loadOntology,
 } from "../../services/ontology/ontologyRegistry";
 import {
+  buildOntologySourceUrl,
   clearOntologySelection,
   createLatestRequestGuard,
   persistOntologySelection,
-  resolveStoredOntologySelection,
+  resolveOntologySelection,
   type OntologySelectionStorage,
 } from "../../services/ontology/ontologySelection";
 import { buildOntologyTree } from "../../services/ontology/ontologyTree";
@@ -28,6 +29,10 @@ type LoadedOntology = {
 
 type LoadResult = "success" | "error" | "stale";
 
+function invalidOntologySourceMessage(path: string): string {
+  return `Ontology source was not found: ${path}`;
+}
+
 function getBrowserStorage(): OntologySelectionStorage | null {
   try {
     return window.localStorage;
@@ -36,7 +41,7 @@ function getBrowserStorage(): OntologySelectionStorage | null {
   }
 }
 
-function OntologyPage({ subPath }: RoutePageProps) {
+function OntologyPage({ subPath, search }: RoutePageProps) {
   const ontologyTree = useMemo(
     () => buildOntologyTree(getOntologyPaths()),
     [],
@@ -104,25 +109,58 @@ function OntologyPage({ subPath }: RoutePageProps) {
 
   useEffect(() => {
     const storage = getBrowserStorage();
-    const initialPath = resolveStoredOntologySelection(storage);
+    const selection = resolveOntologySelection(storage, search);
+    const initialPath = selection.path;
     const defaultPath = getDefaultOntologyPath();
+
+    if (initialPath === activeOntologyPath) {
+      const syncTimer = window.setTimeout(() => {
+        setLoadError(
+          selection.invalidSourcePath
+            ? invalidOntologySourceMessage(selection.invalidSourcePath)
+            : "",
+        );
+      }, 0);
+      return () => window.clearTimeout(syncTimer);
+    }
 
     const startupTimer = window.setTimeout(() => {
       void loadPath(initialPath, true).then(async (result) => {
+        if (result === "success" && selection.invalidSourcePath) {
+          setLoadError(invalidOntologySourceMessage(selection.invalidSourcePath));
+        }
         if (result === "error" && initialPath !== defaultPath) {
           clearOntologySelection(storage);
           await loadPath(defaultPath, true);
+          if (selection.invalidSourcePath) {
+            setLoadError(
+              invalidOntologySourceMessage(selection.invalidSourcePath),
+            );
+          }
         }
       });
     }, 0);
 
     return () => window.clearTimeout(startupTimer);
-  }, [loadPath]);
+  }, [activeOntologyPath, loadPath, search]);
 
   const handleOntologySelect = useCallback(
     async (path: string): Promise<boolean> => {
       if (path === activeOntologyPath) return true;
-      return (await loadPath(path, true)) === "success";
+      const result = await loadPath(path, true);
+      if (result === "success") {
+        window.history.pushState(
+          null,
+          "",
+          buildOntologySourceUrl(
+            window.location.pathname,
+            window.location.search,
+            path,
+          ),
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
+      return result === "success";
     },
     [activeOntologyPath, loadPath],
   );

@@ -4,11 +4,24 @@ import {
 } from "./ontologyRegistry";
 
 export const ONTOLOGY_STORAGE_KEY = "mermaid.ontology.selectedPath";
+export const ONTOLOGY_SOURCE_PARAM = "source";
 
 export type OntologySelectionStorage = Pick<
   Storage,
   "getItem" | "setItem" | "removeItem"
 >;
+
+export type ResolvedOntologySelection = {
+  path: string;
+  sourcePath: string | null;
+  invalidSourcePath: string | null;
+};
+
+function readSourceParam(search: string): string | null {
+  const source = new URLSearchParams(search).get(ONTOLOGY_SOURCE_PARAM);
+  const trimmedSource = source?.trim() ?? "";
+  return trimmedSource || null;
+}
 
 export function resolveStoredOntologySelection(
   storage: OntologySelectionStorage | null,
@@ -27,6 +40,42 @@ export function resolveStoredOntologySelection(
     clearOntologySelection(storage);
   }
   return getDefaultOntologyPath();
+}
+
+export function resolveOntologySourceParam(search: string): string | null {
+  const sourcePath = readSourceParam(search);
+  return sourcePath && hasOntology(sourcePath) ? sourcePath : null;
+}
+
+export function resolveOntologySelection(
+  storage: OntologySelectionStorage | null,
+  search: string,
+): ResolvedOntologySelection {
+  const sourcePath = readSourceParam(search);
+  if (sourcePath && hasOntology(sourcePath)) {
+    return {
+      path: sourcePath,
+      sourcePath,
+      invalidSourcePath: null,
+    };
+  }
+
+  return {
+    path: resolveStoredOntologySelection(storage),
+    sourcePath: null,
+    invalidSourcePath: sourcePath,
+  };
+}
+
+export function buildOntologySourceUrl(
+  pathname: string,
+  search: string,
+  path: string,
+): string {
+  const params = new URLSearchParams(search);
+  params.set(ONTOLOGY_SOURCE_PARAM, path);
+  const query = params.toString();
+  return `${pathname}${query ? `?${query}` : ""}`;
 }
 
 export function persistOntologySelection(

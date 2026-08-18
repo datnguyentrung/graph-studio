@@ -22,15 +22,25 @@ function NotFoundPage({ segment }: { segment: string }) {
 }
 
 export function AppRouter() {
-  const [pathname, setPathname] = useState(() => window.location.pathname);
+  const [location, setLocation] = useState(() => ({
+    pathname: window.location.pathname,
+    search: window.location.search,
+  }));
 
   useEffect(() => {
-    const updatePathname = () => setPathname(window.location.pathname);
-    window.addEventListener("popstate", updatePathname);
-    return () => window.removeEventListener("popstate", updatePathname);
+    const updateLocation = () =>
+      setLocation({
+        pathname: window.location.pathname,
+        search: window.location.search,
+      });
+    window.addEventListener("popstate", updateLocation);
+    return () => window.removeEventListener("popstate", updateLocation);
   }, []);
 
-  const route = useMemo(() => resolveRoute(pathname), [pathname]);
+  const route = useMemo(
+    () => resolveRoute(location.pathname),
+    [location.pathname],
+  );
 
   if (route.kind === "not-found") {
     return <NotFoundPage segment={route.segment} />;
@@ -38,7 +48,10 @@ export function AppRouter() {
 
   return (
     <Suspense fallback={<div className="route-loading">Loading explorer…</div>}>
-      {createElement(route.route.component, { subPath: route.subPath })}
+      {createElement(route.route.component, {
+        subPath: route.subPath,
+        search: location.search,
+      })}
     </Suspense>
   );
 }
