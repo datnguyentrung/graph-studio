@@ -71,7 +71,11 @@ export function OntologyFilters({
   }
 
   return (
-    <aside className="ontology-panel ontology-filters" aria-label="Graph filters">
+    <aside
+      id="ontology-filters-panel"
+      className="ontology-panel ontology-filters"
+      aria-label="Graph filters"
+    >
       <div className="ontology-panel__heading">
         <div>
           <span className="ontology-eyebrow">Find & shape</span>

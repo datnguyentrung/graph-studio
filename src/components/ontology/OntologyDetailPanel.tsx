@@ -198,6 +198,7 @@ export function OntologyDetailPanel({
   if (selectedIds.length === 0) {
     return (
       <aside
+        id="ontology-detail-panel"
         className="ontology-panel ontology-detail"
         aria-label="Selection details"
       >
@@ -219,6 +220,7 @@ export function OntologyDetailPanel({
     ).length;
     return (
       <aside
+        id="ontology-detail-panel"
         className="ontology-panel ontology-detail"
         aria-label="Selection details"
       >
@@ -240,6 +242,7 @@ export function OntologyDetailPanel({
 
   return (
     <aside
+      id="ontology-detail-panel"
       className="ontology-panel ontology-detail"
       aria-label="Selection details"
     >

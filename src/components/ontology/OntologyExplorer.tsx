@@ -3,7 +3,9 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
 } from "react";
 import {
@@ -32,6 +34,7 @@ import { CytoscapeCanvas } from "./CytoscapeCanvas";
 import { OntologyDetailPanel } from "./OntologyDetailPanel";
 import type { OntologyFileSelectorProps } from "./OntologyFileSelector";
 import { OntologyFilters } from "./OntologyFilters";
+import { OntologyPanelSplitter } from "./OntologyPanelSplitter";
 import { OntologyToolbar } from "./OntologyToolbar";
 import {
   useCytoscapeGraph,
@@ -47,6 +50,16 @@ type OntologyExplorerProps = {
   ontologyLoadError: string;
   subPath: string;
 };
+
+const FILTER_PANEL_DEFAULT_WIDTH = 272;
+const FILTER_PANEL_MIN_WIDTH = 180;
+const FILTER_PANEL_MAX_WIDTH = 480;
+const DETAIL_PANEL_DEFAULT_WIDTH = 336;
+const DETAIL_PANEL_MIN_WIDTH = 220;
+const DETAIL_PANEL_MAX_WIDTH = 560;
+const PANEL_COLLAPSE_THRESHOLD = 120;
+const CANVAS_MIN_WIDTH = 300;
+const SPLITTERS_TOTAL_WIDTH = 20;
 
 function updateSet(
   source: Set<string>,
@@ -95,6 +108,14 @@ export function OntologyExplorer({
   const [fitAfterLayout, setFitAfterLayout] = useState(true);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
+  const [filterPanelWidth, setFilterPanelWidth] = useState(
+    FILTER_PANEL_DEFAULT_WIDTH,
+  );
+  const [detailPanelWidth, setDetailPanelWidth] = useState(
+    DETAIL_PANEL_DEFAULT_WIDTH,
+  );
+  const lastFilterPanelWidth = useRef(FILTER_PANEL_DEFAULT_WIDTH);
+  const lastDetailPanelWidth = useRef(DETAIL_PANEL_DEFAULT_WIDTH);
 
   const visibility = useMemo<VisibilityState>(
     () => ({
@@ -295,6 +316,56 @@ export function OntologyExplorer({
     graph.status === "processing-layout" ||
     graph.status === "error";
 
+  function commitFilterPanelWidth(width: number) {
+    const nextWidth = width === 0
+      ? 0
+      : Math.min(
+          FILTER_PANEL_MAX_WIDTH,
+          Math.max(FILTER_PANEL_MIN_WIDTH, width),
+        );
+    if (nextWidth > 0) lastFilterPanelWidth.current = nextWidth;
+    setFilterPanelWidth(nextWidth);
+  }
+
+  function commitDetailPanelWidth(width: number) {
+    const nextWidth = width === 0
+      ? 0
+      : Math.min(
+          DETAIL_PANEL_MAX_WIDTH,
+          Math.max(DETAIL_PANEL_MIN_WIDTH, width),
+        );
+    if (nextWidth > 0) lastDetailPanelWidth.current = nextWidth;
+    setDetailPanelWidth(nextWidth);
+  }
+
+  function toggleFilterPanel() {
+    if (filterPanelWidth === 0) {
+      commitFilterPanelWidth(lastFilterPanelWidth.current);
+      return;
+    }
+    lastFilterPanelWidth.current = filterPanelWidth;
+    setFilterPanelWidth(0);
+  }
+
+  function toggleDetailPanel() {
+    if (detailPanelWidth === 0) {
+      commitDetailPanelWidth(lastDetailPanelWidth.current);
+      return;
+    }
+    lastDetailPanelWidth.current = detailPanelWidth;
+    setDetailPanelWidth(0);
+  }
+
+  const workspaceStyle = {
+    "--ontology-filter-width": `${filterPanelWidth}px`,
+    "--ontology-detail-width": `${detailPanelWidth}px`,
+  } as CSSProperties;
+  const workspaceClassName = `ontology-workspace${
+    showMobileFilters ? " ontology-workspace--show-filters" : ""
+  }${showMobileDetail ? " ontology-workspace--show-detail" : ""}${
+    filterPanelWidth === 0 ? " ontology-workspace--filters-collapsed" : ""
+  }${detailPanelWidth === 0 ? " ontology-workspace--detail-collapsed" : ""}`;
+
   return (
     <main className="ontology-page">
       <header className="ontology-header">
@@ -389,9 +460,7 @@ export function OntologyExplorer({
         </button>
       </div>
 
-      <div
-        className={`ontology-workspace${showMobileFilters ? " ontology-workspace--show-filters" : ""}${showMobileDetail ? " ontology-workspace--show-detail" : ""}`}
-      >
+      <div className={workspaceClassName} style={workspaceStyle}>
         <OntologyFilters
           facets={model.facets}
           filters={filters}
@@ -401,6 +470,23 @@ export function OntologyExplorer({
           onSearchQueryChange={setSearchQuery}
           searchResults={searchResults}
           onChooseSearchResult={chooseSearchResult}
+        />
+        <OntologyPanelSplitter
+          side="left"
+          panelLabel="filters panel"
+          controls="ontology-filters-panel"
+          width={filterPanelWidth}
+          minWidth={FILTER_PANEL_MIN_WIDTH}
+          maxWidth={FILTER_PANEL_MAX_WIDTH}
+          collapseThreshold={PANEL_COLLAPSE_THRESHOLD}
+          minimumRemainingWidth={
+            CANVAS_MIN_WIDTH +
+            SPLITTERS_TOTAL_WIDTH +
+            (detailPanelWidth === 0 ? 0 : DETAIL_PANEL_MIN_WIDTH)
+          }
+          onWidthChange={setFilterPanelWidth}
+          onWidthCommit={commitFilterPanelWidth}
+          onToggle={toggleFilterPanel}
         />
         <CytoscapeCanvas
           containerRef={graph.containerRef}
@@ -417,6 +503,23 @@ export function OntologyExplorer({
           projection={projection}
           viewMode={view.mode}
           progressive={renderingStrategy === "progressive"}
+        />
+        <OntologyPanelSplitter
+          side="right"
+          panelLabel="details panel"
+          controls="ontology-detail-panel"
+          width={detailPanelWidth}
+          minWidth={DETAIL_PANEL_MIN_WIDTH}
+          maxWidth={DETAIL_PANEL_MAX_WIDTH}
+          collapseThreshold={PANEL_COLLAPSE_THRESHOLD}
+          minimumRemainingWidth={
+            CANVAS_MIN_WIDTH +
+            SPLITTERS_TOTAL_WIDTH +
+            (filterPanelWidth === 0 ? 0 : FILTER_PANEL_MIN_WIDTH)
+          }
+          onWidthChange={setDetailPanelWidth}
+          onWidthCommit={commitDetailPanelWidth}
+          onToggle={toggleDetailPanel}
         />
         <OntologyDetailPanel model={model} selectedIds={selectedIds} />
       </div>

@@ -438,6 +438,7 @@ export function useCytoscapeGraph({
     if (!containerRef.current) return;
     let cancelled = false;
     let localCore: Core | null = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     performance.mark("ontology:graph-engine-load-start");
     setStatus("loading-data");
@@ -494,6 +495,10 @@ export function useCytoscapeGraph({
         cy.on("tap", clearSelection);
         cy.on("tap", "node", activateNode);
         cyRef.current = cy;
+        resizeObserver = new ResizeObserver(() => {
+          if (!cy.destroyed()) cy.resize();
+        });
+        resizeObserver.observe(containerRef.current);
         performance.mark("ontology:graph-engine-ready");
         layoutRequestRef.current += 1;
         const requestId = layoutRequestRef.current;
@@ -525,6 +530,8 @@ export function useCytoscapeGraph({
       workerRef.current = null;
       layoutCleanupRef.current?.();
       layoutCleanupRef.current = null;
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       lastTappedNodeRef.current = null;
       if (localCore && !localCore.destroyed()) {
         localCore.off("select unselect", "node, edge");

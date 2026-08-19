@@ -127,3 +127,105 @@ test("meets the automated accessibility floor", async ({ page }) => {
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test("resizes and fully collapses desktop ontology side panels", async ({
+  page,
+}) => {
+  await seedSelectedOntology(page, LOAN_ONTOLOGY_PATH);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Ontology Explorer" }),
+  ).toBeVisible();
+
+  const workspace = page.locator(".ontology-workspace");
+  const filters = page.locator(".ontology-filters");
+  const details = page.locator(".ontology-detail");
+  const canvas = page.locator(".ontology-canvas-wrap");
+  const initialCanvasWidth = (await canvas.boundingBox())?.width ?? 0;
+
+  await page.getByRole("button", { name: "Collapse filters panel" }).click();
+  await expect(workspace).toHaveClass(/ontology-workspace--filters-collapsed/);
+  await expect(filters).not.toBeVisible();
+  expect((await canvas.boundingBox())?.width ?? 0).toBeGreaterThan(initialCanvasWidth);
+
+  await page.getByRole("button", { name: "Expand filters panel" }).click();
+  await expect(filters).toBeVisible();
+  const filterWidthBeforeDrag = (await filters.boundingBox())?.width ?? 0;
+  const leftSplitter = page.getByRole("separator", { name: "Resize filters panel" });
+  const splitterBox = await leftSplitter.boundingBox();
+  if (!splitterBox) throw new Error("Filters splitter is not visible");
+  const splitterX = splitterBox.x + splitterBox.width / 2;
+  const splitterY = splitterBox.y + 24;
+  await page.mouse.move(splitterX, splitterY);
+  await page.mouse.down();
+  await page.mouse.move(splitterX + 80, splitterY, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await filters.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(filterWidthBeforeDrag + 40);
+
+  const workspaceBox = await workspace.boundingBox();
+  const expandedSplitterBox = await leftSplitter.boundingBox();
+  if (!workspaceBox || !expandedSplitterBox) {
+    throw new Error("Ontology workspace is not measurable");
+  }
+  const expandedSplitterX = expandedSplitterBox.x + expandedSplitterBox.width / 2;
+  await page.mouse.move(expandedSplitterX, splitterY);
+  await page.mouse.down();
+  await page.mouse.move(workspaceBox.x + 40, splitterY, { steps: 6 });
+  await page.mouse.up();
+  await expect(workspace).toHaveClass(/ontology-workspace--filters-collapsed/);
+  await expect(filters).not.toBeVisible();
+
+  const collapsedSplitterBox = await leftSplitter.boundingBox();
+  if (!collapsedSplitterBox) throw new Error("Collapsed filters splitter is not visible");
+  const collapsedSplitterX = collapsedSplitterBox.x + collapsedSplitterBox.width / 2;
+  await page.mouse.move(collapsedSplitterX, splitterY);
+  await page.mouse.down();
+  await page.mouse.move(workspaceBox.x + 240, splitterY, { steps: 6 });
+  await page.mouse.up();
+  await expect(filters).toBeVisible();
+  await expect.poll(async () => (await filters.boundingBox())?.width ?? 0)
+    .toBeGreaterThanOrEqual(180);
+
+  await page.getByRole("button", { name: "Collapse details panel" }).click();
+  await expect(workspace).toHaveClass(/ontology-workspace--detail-collapsed/);
+  await expect(details).not.toBeVisible();
+  await page.getByRole("button", { name: "Expand details panel" }).click();
+  await expect(details).toBeVisible();
+
+  const rightSplitter = page.getByRole("separator", { name: "Resize details panel" });
+  const rightSplitterBox = await rightSplitter.boundingBox();
+  if (!rightSplitterBox) throw new Error("Details splitter is not visible");
+  const rightSplitterY = rightSplitterBox.y + 24;
+  const rightSplitterX = rightSplitterBox.x + rightSplitterBox.width / 2;
+  await page.mouse.move(rightSplitterX, rightSplitterY);
+  await page.mouse.down();
+  await page.mouse.move(workspaceBox.x + workspaceBox.width - 40, rightSplitterY, {
+    steps: 6,
+  });
+  await page.mouse.up();
+  await expect(workspace).toHaveClass(/ontology-workspace--detail-collapsed/);
+  await expect(details).not.toBeVisible();
+
+  const collapsedRightSplitterBox = await rightSplitter.boundingBox();
+  if (!collapsedRightSplitterBox) {
+    throw new Error("Collapsed details splitter is not visible");
+  }
+  const collapsedRightSplitterX =
+    collapsedRightSplitterBox.x + collapsedRightSplitterBox.width / 2;
+  await page.mouse.move(collapsedRightSplitterX, rightSplitterY);
+  await page.mouse.down();
+  await page.mouse.move(workspaceBox.x + workspaceBox.width - 260, rightSplitterY, {
+    steps: 6,
+  });
+  await page.mouse.up();
+  await expect(details).toBeVisible();
+  await expect.poll(async () => (await details.boundingBox())?.width ?? 0)
+    .toBeGreaterThanOrEqual(220);
+
+  await rightSplitter.press("Home");
+  await expect(workspace).toHaveClass(/ontology-workspace--detail-collapsed/);
+  await rightSplitter.press("ArrowLeft");
+  await expect(details).toBeVisible();
+});
